@@ -19,8 +19,6 @@ function getAdminApp(): App {
   });
 }
 
-// We use Proxies here so Vercel doesn't try to connect during the build process.
-// It will only connect when an actual API request is made.
 export const adminDb = new Proxy({} as any, {
   get: (target, prop) => {
     const db = getFirestore(getAdminApp());
