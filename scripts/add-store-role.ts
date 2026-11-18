@@ -12,7 +12,7 @@ async function main() {
   
   // Create Store profile if it doesn't exist
   await adminDb.collection('stores').doc(user.uid).set({
-    storeId: user.uid, ownerUserId: user.uid, storeName: user.email.split('@')[0] + "'s Store",
+    storeId: user.uid, ownerUserId: user.uid, storeName: user.email?.split('@')[0] + "'s Store",
     address: 'Demo Address', contact: '', verificationStatus: 'pending', createdAt: now
   }, { merge: true });
 
