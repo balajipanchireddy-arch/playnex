@@ -20,6 +20,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           {/* Dynamic Navigation based on roles */}
           <nav className="hidden md:flex gap-4 text-sm font-semibold">
             {roles.includes('player') && <Link href="/player" className="hover:text-brand transition">Player</Link>}
+            {roles.includes('academy') && <Link href="/academy" className="hover:text-brand transition">Academy</Link>}
             {roles.includes('store') && <Link href="/store" className="hover:text-brand transition">Store</Link>}
             {roles.includes('admin') && <Link href="/admin" className="hover:text-brand transition">Admin</Link>}
           </nav>

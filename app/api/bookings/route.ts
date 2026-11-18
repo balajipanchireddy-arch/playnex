@@ -16,10 +16,16 @@ export async function POST(req: NextRequest) {
     
     const { facilityId, facilityName, slot, price } = parsed.data;
     
+    // 1. Create the booking
     await adminDb.collection('bookings').add({
       userId: session.uid,
       facilityId, facilityName, slot, price,
       status: 'confirmed', createdAt: Date.now()
+    });
+
+    // 2. Mark the slot as unavailable (false) on the facility
+    await adminDb.collection('facilities').doc(facilityId).update({
+      [`slots.${slot}`]: false
     });
 
     return ok({ success: true });

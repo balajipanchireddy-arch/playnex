@@ -4,12 +4,8 @@ import { adminDb } from '@/lib/firebase/admin';
 import { verifySession } from '@/lib/auth/session';
 import { ok, fail } from '@/lib/api/response';
 
-// Helper to check if the user is actually an admin
 async function isAdmin(uid: string) {
-  const snap = await adminDb.collection('userRoles')
-    .where('userId', '==', uid)
-    .where('roleId', '==', 'admin')
-    .get();
+  const snap = await adminDb.collection('userRoles').where('userId', '==', uid).where('roleId', '==', 'admin').get();
   return !snap.empty;
 }
 
@@ -19,15 +15,21 @@ export async function GET() {
   if (!(await isAdmin(session.uid))) return fail('forbidden', 'Admin access required', 403);
 
   try {
-    // Get all stores waiting for verification
-    const snap = await adminDb.collection('stores').where('verificationStatus', '==', 'pending').get();
-    const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    return ok(data);
+    const storesSnap = await adminDb.collection('stores').where('verificationStatus', '==', 'pending').get();
+    const academiesSnap = await adminDb.collection('academies').where('verificationStatus', '==', 'pending').get();
+
+    const pending = [
+      ...storesSnap.docs.map(d => ({ id: d.id, ...d.data(), type: 'store', displayName: d.data().storeName })),
+      ...academiesSnap.docs.map(d => ({ id: d.id, ...d.data(), type: 'academy', displayName: d.data().academyName }))
+    ];
+
+    return ok(pending);
   } catch (e: any) { return fail('server_error', e.message, 500); }
 }
 
 const Body = z.object({
-  storeId: z.string(),
+  id: z.string(),
+  type: z.enum(['store', 'academy']),
   status: z.enum(['approved', 'rejected'])
 });
 
@@ -40,11 +42,10 @@ export async function POST(req: NextRequest) {
     const parsed = Body.safeParse(await req.json());
     if (!parsed.success) return fail('invalid', 'Invalid input', 400);
     
-    const { storeId, status } = parsed.data;
-    await adminDb.collection('stores').doc(storeId).update({
-      verificationStatus: status
-    });
-
+    const { id, type, status } = parsed.data;
+    const collection = type === 'store' ? 'stores' : 'academies';
+    
+    await adminDb.collection(collection).doc(id).update({ verificationStatus: status });
     return ok({ success: true });
   } catch (e: any) { return fail('server_error', e.message, 500); }
 }

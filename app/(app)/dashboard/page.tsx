@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import { verifySession } from '@/lib/auth/session';
 import { adminDb } from '@/lib/firebase/admin';
 const LABELS: Record<string,string> = { player:'Player', staff:'Staff', academy:'Academy', store:'Store', admin:'Admin' };
-const HREF: Record<string,string> = { player:'/player', staff:'/player', academy:'/player', store:'/store', admin:'/admin' };
+const HREF: Record<string,string> = { player:'/player', staff:'/player', academy:'/academy', store:'/store', admin:'/admin' };
 export default async function DashboardPage() {
   const session = await verifySession();
   if (!session) redirect('/login');
