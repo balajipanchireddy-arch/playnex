@@ -2,15 +2,22 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { verifySession } from '@/lib/auth/session';
 import { adminDb } from '@/lib/firebase/admin';
+
+export const dynamic = 'force-dynamic';
+
 const LABELS: Record<string,string> = { player:'Player', staff:'Staff', academy:'Academy', store:'Store', admin:'Admin' };
 const HREF: Record<string,string> = { player:'/player', staff:'/player', academy:'/academy', store:'/store', admin:'/admin' };
+
 export default async function DashboardPage() {
   const session = await verifySession();
   if (!session) redirect('/login');
+  
   const rolesSnap = await adminDb.collection('userRoles').where('userId','==',session.uid).where('status','==','active').get();
   const roles = rolesSnap.docs.map(d => d.data().roleId as string);
+  
   if (!roles.length) return <div className="card">No roles assigned. Contact an administrator.</div>;
   if (roles.length === 1) redirect(HREF[roles[0]] ?? '/player');
+  
   return (
     <div className="card">
       <h1 className="text-2xl font-extrabold">Choose a dashboard</h1>
