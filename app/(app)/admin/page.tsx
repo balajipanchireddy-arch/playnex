@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 
 export default function AdminDashboard() {
   const [requests, setRequests] = useState<any[]>([]);
@@ -45,11 +46,32 @@ export default function AdminDashboard() {
   return (
     <div className="space-y-6">
       <div className="card">
-        <h1 className="text-2xl font-extrabold">Admin Dashboard 🛡️</h1>
-        <p className="text-sm text-ink2 mt-1">Manage platform verifications.</p>
+        <h1 className="text-2xl font-extrabold text-brand">🛡️ Admin Master Portal</h1>
+        <p className="text-sm text-ink2 mt-1">View and manage all aspects of the PlayNex platform.</p>
         {msg && <div className="mt-4 p-3 rounded-xl bg-brand/10 text-brand font-semibold text-sm">{msg}</div>}
       </div>
 
+      {/* Quick Jump Links */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Link href="/player" className="card text-center hover:bg-gray-50 transition border border-transparent hover:border-brand cursor-pointer">
+          <div className="text-2xl mb-2">👤</div>
+          <div className="font-bold text-sm">Player Portal</div>
+        </Link>
+        <Link href="/staff" className="card text-center hover:bg-gray-50 transition border border-transparent hover:border-brand cursor-pointer">
+          <div className="text-2xl mb-2">🧑‍🏫</div>
+          <div className="font-bold text-sm">Staff Portal</div>
+        </Link>
+        <Link href="/academy" className="card text-center hover:bg-gray-50 transition border border-transparent hover:border-brand cursor-pointer">
+          <div className="text-2xl mb-2">🏟️</div>
+          <div className="font-bold text-sm">Academy Portal</div>
+        </Link>
+        <Link href="/store" className="card text-center hover:bg-gray-50 transition border border-transparent hover:border-brand cursor-pointer">
+          <div className="text-2xl mb-2">🏪</div>
+          <div className="font-bold text-sm">Store Portal</div>
+        </Link>
+      </div>
+
+      {/* Verification Queue */}
       <div className="card">
         <h2 className="text-lg font-extrabold mb-4">Pending Verifications ({requests.length})</h2>
         
@@ -72,18 +94,8 @@ export default function AdminDashboard() {
                   <p className="text-xs text-ink2">Address: {req.address}</p>
                 </div>
                 <div className="flex gap-2">
-                  <button 
-                    onClick={() => handleReview(req.id, req.type, 'approved')} 
-                    className="btn btn-sm bg-ok hover:bg-ok/90"
-                  >
-                    Approve
-                  </button>
-                  <button 
-                    onClick={() => handleReview(req.id, req.type, 'rejected')} 
-                    className="btn btn-sm bg-bad hover:bg-bad/90"
-                  >
-                    Reject
-                  </button>
+                  <button onClick={() => handleReview(req.id, req.type, 'approved')} className="btn btn-sm bg-ok hover:bg-ok/90 text-white">Approve</button>
+                  <button onClick={() => handleReview(req.id, req.type, 'rejected')} className="btn btn-sm bg-bad hover:bg-bad/90 text-white">Reject</button>
                 </div>
               </div>
             ))}

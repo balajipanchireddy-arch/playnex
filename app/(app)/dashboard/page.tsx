@@ -16,8 +16,14 @@ export default async function DashboardPage() {
   const roles = rolesSnap.docs.map(d => d.data().roleId as string);
   
   if (!roles.length) return <div className="card">No roles assigned. Contact an administrator.</div>;
+  
+  // If they are an Admin, send them straight to the Admin dashboard
+  if (roles.includes('admin')) redirect('/admin');
+  
+  // If they have exactly one role, send them there
   if (roles.length === 1) redirect(HREF[roles[0]] ?? '/player');
   
+  // Otherwise, let them choose
   return (
     <div className="card">
       <h1 className="text-2xl font-extrabold">Choose a dashboard</h1>
