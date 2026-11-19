@@ -9,7 +9,8 @@
     "typecheck": "tsc --noEmit",
     "seed:admin": "dotenv -e .env.local -- tsx scripts/seed-admin.ts",
     "seed:demo": "dotenv -e .env.local -- tsx scripts/seed-demo.ts",
-    "add:store": "dotenv -e .env.local -- tsx scripts/add-store-role.ts"
+    "add:store": "dotenv -e .env.local -- tsx scripts/add-store-role.ts",
+    "add:staff": "dotenv -e .env.local -- tsx scripts/add-staff-role.ts"
   },
   "dependencies": {
     "firebase": "^10.13.0",
