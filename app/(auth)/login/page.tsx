@@ -67,9 +67,11 @@ export default function LoginPage() {
 
           {/* Brand header */}
           <div className="flex items-center gap-3 mb-6">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-tr from-brand-600 to-teal-500 text-white shadow-md shadow-brand-500/25">
-              <Zap className="h-5 w-5 fill-current" />
-            </div>
+            <img
+              src="/playnex-mark.png"
+              alt="PlayNex Logo"
+              className="h-11 w-11 rounded-xl object-cover shadow-md"
+            />
             <div>
               <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">
                 Welcome back

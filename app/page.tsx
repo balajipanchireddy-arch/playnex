@@ -74,9 +74,7 @@ export default function LandingPage() {
       <header className="sticky top-0 z-30 w-full border-b border-slate-200/80 bg-white/80 backdrop-blur-md">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-5 sm:px-8">
           <Link href="/" className="group flex items-center gap-2.5">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-tr from-brand-600 to-teal-500 text-white shadow-md shadow-brand-500/25 transition group-hover:scale-105">
-              <Zap className="h-5 w-5 fill-current" />
-            </div>
+            <img src="/playnex-mark.png" alt="PlayNex Logo" className="h-10 w-10 rounded-xl object-cover shadow-md transition group-hover:scale-105" />
             <div className="flex flex-col">
               <span className="text-xl font-extrabold tracking-tight text-slate-900">
                 Play<span className="text-brand-600">Nex</span>
@@ -275,7 +273,7 @@ export default function LandingPage() {
       <footer className="border-t border-slate-200 bg-white py-10 text-slate-500 text-xs">
         <div className="mx-auto max-w-7xl px-5 sm:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2 font-bold text-slate-900 text-sm">
-            <Zap className="h-4 w-4 text-brand-600" />
+            <img src="/playnex-mark.png" alt="PlayNex Logo" className="h-6 w-6 rounded-md object-cover" />
             PlayNex
           </div>
           <p>© {new Date().getFullYear()} PlayNex Platform. All rights reserved.</p>

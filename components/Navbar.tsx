@@ -1,17 +1,18 @@
+
 'use client';
 
+import Image from 'next/image';
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { 
-  Zap, 
-  LayoutDashboard, 
-  Trophy, 
-  Landmark, 
-  ShoppingBag, 
-  ShieldCheck, 
-  LogOut, 
-  Menu, 
+import {
+  LayoutDashboard,
+  Trophy,
+  Landmark,
+  ShoppingBag,
+  ShieldCheck,
+  LogOut,
+  Menu,
   X,
   ChevronRight,
   UserCheck
@@ -65,15 +66,24 @@ export default function Navbar({ roles, isAdmin, userEmail, signOutAction }: Nav
   return (
     <header className="sticky top-0 z-40 w-full border-b border-slate-200/80 bg-white/80 backdrop-blur-md transition-all">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
+
         {/* Brand & Logo */}
         <div className="flex items-center gap-8">
-          <Link 
-            href="/dashboard" 
+          <Link
+            href="/dashboard"
             className="group flex items-center gap-2.5 transition"
           >
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-tr from-brand-600 to-teal-500 text-white shadow-md shadow-brand-500/25 transition group-hover:scale-105 group-hover:shadow-glow">
-              <Zap className="h-5 w-5 fill-current" />
+            <div className="transition group-hover:scale-105">
+              <Image
+                src="/playnex-mark.png"
+                alt="PlayNex Logo"
+                width={40}
+                height={40}
+                className="h-10 w-10 rounded-xl object-cover shadow-md"
+                priority
+              />
             </div>
+
             <div className="flex flex-col">
               <span className="text-xl font-extrabold tracking-tight text-slate-900 group-hover:text-brand-600 transition">
                 Play<span className="text-brand-600">Nex</span>
@@ -89,6 +99,7 @@ export default function Navbar({ roles, isAdmin, userEmail, signOutAction }: Nav
             {navLinks.map((link) => {
               const Icon = link.icon;
               const isActive = pathname === link.href || pathname.startsWith(link.href + '/');
+
               return (
                 <Link
                   key={link.href}
@@ -107,9 +118,8 @@ export default function Navbar({ roles, isAdmin, userEmail, signOutAction }: Nav
           </nav>
         </div>
 
-        {/* Right Actions: Notification Bell + User Pill & Sign Out Action */}
+        {/* Right Actions */}
         <div className="flex items-center gap-3">
-          {/* Notification Bell */}
           <NotificationBell />
 
           <div className="hidden sm:flex items-center gap-3">
@@ -162,6 +172,7 @@ export default function Navbar({ roles, isAdmin, userEmail, signOutAction }: Nav
                 </p>
               </div>
             </div>
+
             <form action={signOutAction}>
               <button
                 type="submit"
@@ -177,6 +188,7 @@ export default function Navbar({ roles, isAdmin, userEmail, signOutAction }: Nav
             {navLinks.map((link) => {
               const Icon = link.icon;
               const isActive = pathname === link.href || pathname.startsWith(link.href + '/');
+
               return (
                 <Link
                   key={link.href}
