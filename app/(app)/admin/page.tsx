@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { 
   ShieldCheck, 
+  ShieldAlert,
   Trophy, 
   Landmark, 
   ShoppingBag, 
@@ -21,6 +22,7 @@ import {
 export default function AdminDashboard() {
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isForbidden, setIsForbidden] = useState(false);
   const [notification, setNotification] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const [reviewingId, setReviewingId] = useState<string | null>(null);
 
@@ -35,6 +37,10 @@ export default function AdminDashboard() {
     setLoading(true);
     try {
       const res = await fetch('/api/admin/verifications');
+      if (res.status === 403 || res.status === 401) {
+        setIsForbidden(true);
+        return;
+      }
       const data = await res.json();
       if (data.ok) {
         setRequests(data.data);
@@ -72,6 +78,25 @@ export default function AdminDashboard() {
     } finally {
       setReviewingId(null);
     }
+  }
+
+  if (isForbidden) {
+    return (
+      <div className="card max-w-md mx-auto text-center py-12 px-6">
+        <div className="w-14 h-14 rounded-2xl bg-rose-50 text-rose-600 border border-rose-200 flex items-center justify-center mx-auto mb-4">
+          <ShieldAlert className="h-7 w-7" />
+        </div>
+        <h2 className="text-xl font-bold text-slate-900">Access Restricted</h2>
+        <p className="text-xs text-slate-500 mt-2 max-w-xs mx-auto">
+          Administrator privileges are required to view and manage the master control portal.
+        </p>
+        <div className="mt-6">
+          <Link href="/dashboard" className="btn btn-secondary text-xs">
+            Return to Dashboard
+          </Link>
+        </div>
+      </div>
+    );
   }
 
   const portalCards = [
@@ -159,7 +184,7 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* Quick Jump Portals (No Staff!) */}
+      {/* Quick Jump Portals */}
       <div>
         <h2 className="text-xs font-bold uppercase tracking-wider text-slate-600 mb-4">
           Direct Portal Access

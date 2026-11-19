@@ -12,6 +12,15 @@ const Body = z.object({
   image: z.string().optional(),
 });
 
+async function isAcademyOrAdmin(uid: string) {
+  const snap = await adminDb.collection('userRoles')
+    .where('userId', '==', uid)
+    .where('status', '==', 'active')
+    .get();
+  const roles = snap.docs.map((d: any) => d.data().roleId);
+  return roles.includes('admin') || roles.includes('academy');
+}
+
 export async function GET() {
   const session = await verifySession();
   if (!session) return fail('unauthorized', 'Login required', 401);
@@ -25,9 +34,14 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const session = await verifySession();
   if (!session) return fail('unauthorized', 'Login required', 401);
+
+  if (!(await isAcademyOrAdmin(session.uid))) {
+    return fail('forbidden', 'Academy operator permissions required', 403);
+  }
+
   try {
     const parsed = Body.safeParse(await req.json());
-    if (!parsed.success) return fail('invalid', 'Invalid input', 400);
+    if (!parsed.success) return fail('invalid', 'Invalid input payload', 400);
     const { name, address, sport, price, image } = parsed.data;
     
     const defaultSlots: Record<string, boolean> = {};
@@ -51,7 +65,7 @@ export async function POST(req: NextRequest) {
 }
 
 const PatchBody = z.object({
-  facilityId: z.string(),
+  facilityId: z.string().min(1),
   slot: z.string().optional(),
   available: z.boolean().optional(),
   price: z.number().optional(),
@@ -63,13 +77,13 @@ export async function PATCH(req: NextRequest) {
   if (!session) return fail('unauthorized', 'Login required', 401);
   try {
     const parsed = PatchBody.safeParse(await req.json());
-    if (!parsed.success) return fail('invalid', 'Invalid input', 400);
+    if (!parsed.success) return fail('invalid', 'Invalid input payload', 400);
     const { facilityId, slot, available, price, closed } = parsed.data;
 
     const facRef = adminDb.collection('facilities').doc(facilityId);
     const facSnap = await facRef.get();
     if (!facSnap.exists) return fail('not_found', 'Facility not found', 404);
-    if (facSnap.data().academyId !== session.uid) return fail('forbidden', 'Unauthorized', 403);
+    if (facSnap.data().academyId !== session.uid) return fail('forbidden', 'Unauthorized to modify this facility', 403);
 
     const updates: any = {};
     if (slot !== undefined && available !== undefined) updates[`slots.${slot}`] = available;
@@ -92,7 +106,7 @@ export async function DELETE(req: NextRequest) {
     const facRef = adminDb.collection('facilities').doc(facilityId);
     const facSnap = await facRef.get();
     if (!facSnap.exists) return fail('not_found', 'Facility not found', 404);
-    if (facSnap.data().academyId !== session.uid) return fail('forbidden', 'Unauthorized', 403);
+    if (facSnap.data().academyId !== session.uid) return fail('forbidden', 'Unauthorized to delete this facility', 403);
 
     await facRef.delete();
     return ok({ success: true });

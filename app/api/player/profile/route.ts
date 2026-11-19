@@ -26,9 +26,9 @@ export async function GET() {
 
 const Body = z.object({
   available: z.boolean().optional(),
-  name: z.string().optional(),
-  skill: z.string().optional(),
-  location: z.string().optional(),
+  name: z.string().trim().min(1).max(100).optional(),
+  skill: z.string().trim().min(1).max(50).optional(),
+  location: z.string().trim().min(1).max(100).optional(),
 });
 
 export async function PUT(req: NextRequest) {
@@ -37,7 +37,7 @@ export async function PUT(req: NextRequest) {
 
   try {
     const parsed = Body.safeParse(await req.json());
-    if (!parsed.success) return fail('invalid', 'Invalid input', 400);
+    if (!parsed.success) return fail('invalid', 'Invalid input payload', 400);
     
     const updates = parsed.data;
 
@@ -45,6 +45,7 @@ export async function PUT(req: NextRequest) {
       await adminDb.collection('playerProfiles').doc(session.uid).set({
         ...(updates.available !== undefined && { available: updates.available }),
         ...(updates.skill !== undefined && { skillLevel: updates.skill }),
+        updatedAt: Date.now(),
       }, { merge: true });
     }
 
@@ -52,6 +53,7 @@ export async function PUT(req: NextRequest) {
       await adminDb.collection('users').doc(session.uid).set({
         ...(updates.name !== undefined && { fullName: updates.name }),
         ...(updates.location !== undefined && { address: updates.location }),
+        updatedAt: Date.now(),
       }, { merge: true });
     }
 

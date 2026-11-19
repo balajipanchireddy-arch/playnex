@@ -12,6 +12,15 @@ const Body = z.object({
   price: z.number().min(0),
 });
 
+async function isAcademyOrAdmin(uid: string) {
+  const snap = await adminDb.collection('userRoles')
+    .where('userId', '==', uid)
+    .where('status', '==', 'active')
+    .get();
+  const roles = snap.docs.map((d: any) => d.data().roleId);
+  return roles.includes('admin') || roles.includes('academy');
+}
+
 export async function GET() {
   const session = await verifySession();
   if (!session) return fail('unauthorized', 'Login required', 401);
@@ -24,14 +33,23 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const session = await verifySession();
   if (!session) return fail('unauthorized', 'Login required', 401);
+
+  if (!(await isAcademyOrAdmin(session.uid))) {
+    return fail('forbidden', 'Academy operator permissions required', 403);
+  }
+
   try {
     const parsed = Body.safeParse(await req.json());
-    if (!parsed.success) return fail('invalid', 'Invalid input', 400);
+    if (!parsed.success) return fail('invalid', 'Invalid input payload', 400);
     const { name, sport, date, loc, price } = parsed.data;
     
     await adminDb.collection('events').add({
       academyId: session.uid,
-      name, sport, date, loc, price,
+      name,
+      sport,
+      date,
+      loc,
+      price,
       createdAt: Date.now()
     });
     return ok({ success: true });

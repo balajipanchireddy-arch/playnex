@@ -11,6 +11,15 @@ const Body = z.object({
   qty: z.number().min(0)
 });
 
+async function isStoreOrAdmin(uid: string) {
+  const snap = await adminDb.collection('userRoles')
+    .where('userId', '==', uid)
+    .where('status', '==', 'active')
+    .get();
+  const roles = snap.docs.map((d: any) => d.data().roleId);
+  return roles.includes('admin') || roles.includes('store');
+}
+
 export async function GET() {
   const session = await verifySession(); 
   if (!session) return fail('unauthorized', 'Login required', 401);
@@ -23,6 +32,11 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const session = await verifySession(); 
   if (!session) return fail('unauthorized', 'Login required', 401);
+
+  if (!(await isStoreOrAdmin(session.uid))) {
+    return fail('forbidden', 'Sports store partner permissions required', 403);
+  }
+
   try {
     const parsed = Body.safeParse(await req.json());
     if (!parsed.success) return fail('invalid', 'Invalid input payload', 400);
@@ -63,7 +77,7 @@ export async function PATCH(req: NextRequest) {
     const prodRef = adminDb.collection('products').doc(productId);
     const prodSnap = await prodRef.get();
     if (!prodSnap.exists) return fail('not_found', 'Product not found', 404);
-    if (prodSnap.data().storeId !== session.uid) return fail('forbidden', 'Unauthorized', 403);
+    if (prodSnap.data().storeId !== session.uid) return fail('forbidden', 'Unauthorized to modify this product', 403);
 
     const updates: any = {};
     if (qty !== undefined) updates.qty = Math.max(0, qty);
@@ -85,7 +99,7 @@ export async function DELETE(req: NextRequest) {
     const prodRef = adminDb.collection('products').doc(productId);
     const prodSnap = await prodRef.get();
     if (!prodSnap.exists) return fail('not_found', 'Product not found', 404);
-    if (prodSnap.data().storeId !== session.uid) return fail('forbidden', 'Unauthorized', 403);
+    if (prodSnap.data().storeId !== session.uid) return fail('forbidden', 'Unauthorized to delete this product', 403);
 
     await prodRef.delete();
     return ok({ success: true });
