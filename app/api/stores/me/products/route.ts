@@ -12,7 +12,7 @@ export async function GET() {
   const session = await verifySession(); if (!session) return fail('unauthorized', 'Login required', 401);
   try {
     const snap = await adminDb.collection('products').where('storeId', '==', session.uid).get();
-    return ok(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    return ok(snap.docs.map((d: any) => ({ id: d.id, ...d.data() })));
   } catch (e: any) { return fail('server_error', e.message, 500); }
 }
 

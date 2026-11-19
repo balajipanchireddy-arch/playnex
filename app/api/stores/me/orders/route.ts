@@ -10,7 +10,7 @@ export async function GET() {
 
   try {
     const snap = await adminDb.collection('orders').where('storeId', '==', session.uid).get();
-    const orders = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const orders = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
     return ok(orders);
   } catch (e: any) { return fail('server_error', e.message, 500); }
 }

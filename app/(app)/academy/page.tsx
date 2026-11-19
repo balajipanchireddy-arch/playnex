@@ -1,12 +1,31 @@
 'use client';
+
 import { useState, useEffect } from 'react';
 import { uploadImage } from '@/lib/utils/upload';
+import { 
+  Landmark, 
+  Trophy, 
+  Plus, 
+  Trash2, 
+  Clock, 
+  Lock, 
+  Unlock, 
+  Calendar, 
+  MapPin, 
+  ImagePlus, 
+  CheckCircle2, 
+  AlertCircle, 
+  X,
+  Sparkles,
+  DollarSign,
+  ChevronDown
+} from 'lucide-react';
 
 export default function AcademyDashboard() {
   const [facilities, setFacilities] = useState<any[]>([]);
   const [tournaments, setTournaments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [msg, setMsg] = useState('');
+  const [notification, setNotification] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   
   // Ground Form State
   const [name, setName] = useState('');
@@ -14,7 +33,8 @@ export default function AcademyDashboard() {
   const [sport, setSport] = useState('Basketball');
   const [price, setPrice] = useState('');
   const [imageFile, setImageFile] = useState<File | null>(null);
-  const [submitting, setSubmitting] = useState(false);
+  const [submittingGround, setSubmittingGround] = useState(false);
+  const [showAddGround, setShowAddGround] = useState(false);
 
   // Tournament Form State
   const [tName, setTName] = useState('');
@@ -22,6 +42,15 @@ export default function AcademyDashboard() {
   const [tDate, setTDate] = useState('');
   const [tLoc, setTLoc] = useState('');
   const [tPrice, setTPrice] = useState('');
+  const [submittingTournament, setSubmittingTournament] = useState(false);
+  const [showAddTournament, setShowAddTournament] = useState(false);
+
+  function notify(type: 'ok' | 'err', text: string) {
+    setNotification({ type, text });
+    setTimeout(() => {
+      setNotification((curr) => (curr?.text === text ? null : curr));
+    }, 4500);
+  }
 
   async function loadData() {
     try {
@@ -31,150 +60,632 @@ export default function AcademyDashboard() {
       ]);
       if (facRes.ok) setFacilities(facRes.data);
       if (tourRes.ok) setTournaments(tourRes.data);
-    } finally { setLoading(false); }
+    } catch {
+      notify('err', 'Could not load academy data.');
+    } finally { 
+      setLoading(false); 
+    }
   }
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => { 
+    loadData(); 
+  }, []);
 
   async function handleAddFacility(e: React.FormEvent) {
     e.preventDefault();
-    setMsg(''); setSubmitting(true);
+    setSubmittingGround(true);
     let imageUrl = '';
     try {
-      if (imageFile) imageUrl = await uploadImage(imageFile, 'academies');
+      if (imageFile) {
+        imageUrl = await uploadImage(imageFile, 'academies');
+      }
       const res = await fetch('/api/academies/me/facilities', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, address, sport, price: Number(price), image: imageUrl })
       });
-      if ((await res.json()).ok) {
-        setMsg('✅ Ground added!'); setName(''); setAddress(''); setPrice(''); setImageFile(null); loadData();
+      const data = await res.json();
+      if (data.ok) {
+        notify('ok', `Added ${name} to your venues!`);
+        setName(''); 
+        setAddress(''); 
+        setPrice(''); 
+        setImageFile(null); 
+        setShowAddGround(false);
+        loadData();
+      } else {
+        notify('err', data.error?.message || 'Failed to add ground.');
       }
-    } catch (err) { setMsg('❌ Failed to upload/save.'); } finally { setSubmitting(false); }
+    } catch { 
+      notify('err', 'Upload or network error.'); 
+    } finally { 
+      setSubmittingGround(false); 
+    }
   }
 
   async function handleAddTournament(e: React.FormEvent) {
     e.preventDefault();
-    setMsg('');
-    const res = await fetch('/api/academies/me/events', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: tName, sport: tSport, date: tDate, loc: tLoc, price: Number(tPrice) })
-    });
-    if ((await res.json()).ok) {
-      setMsg('✅ Tournament published successfully!');
-      setTName(''); setTDate(''); setTLoc(''); setTPrice(''); loadData();
+    setSubmittingTournament(true);
+    try {
+      const res = await fetch('/api/academies/me/events', {
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: tName, sport: tSport, date: tDate, loc: tLoc, price: Number(tPrice) })
+      });
+      const data = await res.json();
+      if (data.ok) {
+        notify('ok', `Tournament "${tName}" published!`);
+        setTName(''); 
+        setTDate(''); 
+        setTLoc(''); 
+        setTPrice(''); 
+        setShowAddTournament(false);
+        loadData();
+      } else {
+        notify('err', data.error?.message || 'Failed to publish tournament.');
+      }
+    } catch {
+      notify('err', 'Network error.');
+    } finally {
+      setSubmittingTournament(false);
     }
   }
 
   async function toggleSlot(facilityId: string, slot: string, currentAvail: boolean) {
     setFacilities(facilities.map(f => f.id === facilityId ? { ...f, slots: { ...f.slots, [slot]: !currentAvail } } : f));
-    await fetch('/api/academies/me/facilities', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ facilityId, slot, available: !currentAvail }) });
+    await fetch('/api/academies/me/facilities', { 
+      method: 'PATCH', 
+      headers: { 'Content-Type': 'application/json' }, 
+      body: JSON.stringify({ facilityId, slot, available: !currentAvail }) 
+    });
   }
+
   async function updatePrice(facilityId: string, newPrice: string) {
-    const p = Number(newPrice); if (isNaN(p)) return;
+    const p = Number(newPrice); 
+    if (isNaN(p) || p <= 0) return;
     setFacilities(facilities.map(f => f.id === facilityId ? { ...f, price: p } : f));
-    await fetch('/api/academies/me/facilities', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ facilityId, price: p }) });
+    await fetch('/api/academies/me/facilities', { 
+      method: 'PATCH', 
+      headers: { 'Content-Type': 'application/json' }, 
+      body: JSON.stringify({ facilityId, price: p }) 
+    });
+    notify('ok', 'Updated venue rate.');
   }
+
   async function toggleClosed(facilityId: string, currentClosed: boolean) {
     setFacilities(facilities.map(f => f.id === facilityId ? { ...f, closed: !currentClosed } : f));
-    await fetch('/api/academies/me/facilities', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ facilityId, closed: !currentClosed }) });
+    await fetch('/api/academies/me/facilities', { 
+      method: 'PATCH', 
+      headers: { 'Content-Type': 'application/json' }, 
+      body: JSON.stringify({ facilityId, closed: !currentClosed }) 
+    });
+    notify('ok', !currentClosed ? 'Ground marked closed temporarily.' : 'Ground reopened for bookings!');
   }
+
   async function deleteGround(facilityId: string) {
-    if (!confirm('Delete this ground?')) return;
+    if (!confirm('Are you sure you want to remove this ground? All slot data will be erased.')) return;
     await fetch(`/api/academies/me/facilities?facilityId=${facilityId}`, { method: 'DELETE' });
+    notify('ok', 'Ground removed.');
     loadData();
   }
 
-  const formatSlot = (h: string) => `${parseInt(h) % 12 || 12} ${parseInt(h) >= 12 ? 'PM' : 'AM'}`;
+  const formatSlot = (h: string) => {
+    const val = parseInt(h);
+    const hour = val % 12 || 12;
+    const ampm = val >= 12 ? 'PM' : 'AM';
+    return `${hour} ${ampm}`;
+  };
 
-  if (loading) return <p className="text-center mt-10">Loading...</p>;
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20">
+        <div className="h-10 w-10 animate-spin rounded-full border-4 border-brand-500 border-t-transparent" />
+        <p className="mt-4 text-sm font-semibold text-slate-500">Loading academy management portal...</p>
+      </div>
+    );
+  }
+
+  const totalSlotsCount = facilities.reduce((acc, f) => acc + Object.keys(f.slots || {}).length, 0);
 
   return (
-    <div className="space-y-8">
-      <div className="card">
-        <h1 className="text-2xl font-extrabold">🏟️ Academy Dashboard</h1>
-        <p className="text-sm text-ink2 mt-1">Manage your grounds and host tournaments.</p>
-        {msg && <div className="mt-4 p-3 rounded-xl bg-brand/10 text-brand font-semibold text-sm">{msg}</div>}
-      </div>
+    <div className="space-y-8 relative">
+      {/* Toast Notification */}
+      {notification && (
+        <div className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-2xl px-5 py-3.5 shadow-2xl border backdrop-blur-md animate-in slide-in-from-bottom duration-200 ${
+          notification.type === 'ok' 
+            ? 'bg-emerald-900/90 text-white border-emerald-700/80' 
+            : 'bg-rose-900/90 text-white border-rose-700/80'
+        }`}>
+          {notification.type === 'ok' ? (
+            <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0" />
+          ) : (
+            <AlertCircle className="h-5 w-5 text-rose-400 shrink-0" />
+          )}
+          <span className="text-xs font-semibold">{notification.text}</span>
+          <button 
+            onClick={() => setNotification(null)}
+            className="ml-2 rounded-lg p-1 text-white/60 hover:text-white"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
 
-      {/* 🏆 TOURNAMENTS SECTION */}
-      <div className="card border-t-4 border-brand">
-        <h2 className="text-xl font-extrabold mb-4">🏆 Host a Tournament</h2>
-        <form onSubmit={handleAddTournament} className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end mb-8 bg-gray-50 p-4 rounded-xl border border-line">
-          <div className="md:col-span-2"><label className="label">Tournament Name</label><input required value={tName} onChange={e=>setTName(e.target.value)} className="input" placeholder="e.g. Summer Cup 2026" /></div>
-          <div><label className="label">Sport</label><select value={tSport} onChange={e=>setTSport(e.target.value)} className="input"><option>Basketball</option><option>Football</option><option>Cricket</option></select></div>
-          <div><label className="label">Date</label><input type="date" required value={tDate} onChange={e=>setTDate(e.target.value)} className="input" /></div>
-          <div><label className="label">Location</label><input required value={tLoc} onChange={e=>setTLoc(e.target.value)} className="input" placeholder="Main Ground" /></div>
-          <div><label className="label">Entry Fee (₹)</label><input type="number" required min="0" value={tPrice} onChange={e=>setTPrice(e.target.value)} className="input" /></div>
-          <button type="submit" className="btn md:col-span-1 w-full">Publish</button>
-        </form>
+      {/* Hero Overview Header */}
+      <div className="card bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white border-slate-800 p-6 sm:p-8 relative overflow-hidden">
+        <div 
+          aria-hidden 
+          className="absolute -right-16 -top-16 w-64 h-64 rounded-full bg-teal-500/15 blur-3xl pointer-events-none" 
+        />
 
-        <h3 className="font-bold text-sm text-ink2 uppercase tracking-wide mb-3">Your Active Tournaments</h3>
-        {tournaments.length === 0 ? <p className="text-sm text-ink2">No tournaments hosted yet.</p> : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {tournaments.map(t => (
-              <div key={t.id} className="border border-line p-4 rounded-xl bg-white shadow-sm">
-                <div className="flex justify-between items-start">
-                  <p className="font-bold">{t.name}</p>
-                  <span className="badge badge-warn text-xs">₹{t.price}</span>
-                </div>
-                <p className="text-xs text-ink2 mt-1">📍 {t.loc} · {t.sport}</p>
-                <p className="text-xs font-semibold text-brand mt-2">📅 {new Date(t.date).toDateString()}</p>
+        <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+          <div className="flex items-center gap-4">
+            <div className="flex h-14 w-14 sm:h-16 sm:w-16 items-center justify-center rounded-2xl bg-gradient-to-tr from-teal-500 to-emerald-400 text-white shadow-lg shadow-teal-500/25">
+              <Landmark className="h-7 w-7" />
+            </div>
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-teal-300 border border-white/10 mb-1">
+                <Sparkles className="h-3 w-3" />
+                Venue Operator
               </div>
-            ))}
+              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
+                Academy & Arena Control
+              </h1>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Manage turf reservations, live booking slots, and competitive tournaments.
+              </p>
+            </div>
           </div>
-        )}
+
+          <div className="flex flex-wrap items-center gap-2.5">
+            <button
+              onClick={() => { setShowAddGround(!showAddGround); setShowAddTournament(false); }}
+              className="btn btn-sm btn-emerald text-xs"
+            >
+              <Plus className="h-4 w-4" />
+              Add Ground
+            </button>
+            <button
+              onClick={() => { setShowAddTournament(!showAddTournament); setShowAddGround(false); }}
+              className="btn btn-sm btn-secondary text-xs"
+            >
+              <Trophy className="h-4 w-4 text-amber-500" />
+              Host Tournament
+            </button>
+          </div>
+        </div>
+
+        {/* KPI Strip */}
+        <div className="mt-6 pt-6 border-t border-slate-800/80 grid grid-cols-3 gap-4 text-xs">
+          <div>
+            <p className="text-slate-400 font-medium">Grounds Listed</p>
+            <p className="text-xl font-bold text-white mt-0.5">{facilities.length}</p>
+          </div>
+          <div>
+            <p className="text-slate-400 font-medium">Hourly Slots Active</p>
+            <p className="text-xl font-bold text-teal-400 mt-0.5">{totalSlotsCount}</p>
+          </div>
+          <div>
+            <p className="text-slate-400 font-medium">Hosted Tournaments</p>
+            <p className="text-xl font-bold text-amber-400 mt-0.5">{tournaments.length}</p>
+          </div>
+        </div>
       </div>
 
-      {/* 🏟️ GROUNDS SECTION */}
-      <div className="card">
-        <h2 className="text-xl font-extrabold mb-4">🏟️ Your Grounds</h2>
-        {facilities.length === 0 ? <p className="text-sm text-ink2">No grounds added yet.</p> : (
+      {/* EXPANDABLE ADD GROUND FORM */}
+      {showAddGround && (
+        <div className="card border-2 border-emerald-500/30 bg-emerald-50/20 p-6 animate-in slide-in-from-top duration-200">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
+                <Plus className="h-4 w-4" />
+              </div>
+              <h2 className="text-base font-bold text-slate-900">Add New Ground or Turf</h2>
+            </div>
+            <button 
+              onClick={() => setShowAddGround(false)}
+              className="rounded-lg p-1 text-slate-400 hover:text-slate-700"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          <form onSubmit={handleAddFacility} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="label">Ground Name</label>
+              <input 
+                required 
+                value={name} 
+                onChange={e => setName(e.target.value)} 
+                className="input" 
+                placeholder="e.g. Apex Arena Court 1" 
+              />
+            </div>
+            <div>
+              <label className="label">Full Address / Location</label>
+              <input 
+                required 
+                value={address} 
+                onChange={e => setAddress(e.target.value)} 
+                className="input" 
+                placeholder="e.g. 12 Sports Lane, North Arena" 
+              />
+            </div>
+            <div>
+              <label className="label">Sport Category</label>
+              <select 
+                value={sport} 
+                onChange={e => setSport(e.target.value)} 
+                className="input"
+              >
+                <option>Basketball</option>
+                <option>Football</option>
+                <option>Cricket</option>
+                <option>Tennis</option>
+              </select>
+            </div>
+            <div>
+              <label className="label">Hourly Price (₹/hr)</label>
+              <input 
+                type="number" 
+                required 
+                min="1" 
+                value={price} 
+                onChange={e => setPrice(e.target.value)} 
+                className="input" 
+                placeholder="e.g. 800" 
+              />
+            </div>
+            <div className="md:col-span-2">
+              <label className="label">Ground Photo (Optional)</label>
+              <div className="flex items-center gap-3">
+                <input 
+                  type="file" 
+                  accept="image/*" 
+                  onChange={e => setImageFile(e.target.files?.[0] || null)} 
+                  className="input file:mr-3 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-brand-50 file:text-brand-700" 
+                />
+              </div>
+            </div>
+            <div className="md:col-span-2 flex justify-end gap-2 mt-2">
+              <button 
+                type="button" 
+                onClick={() => setShowAddGround(false)}
+                className="btn btn-secondary text-xs"
+              >
+                Cancel
+              </button>
+              <button 
+                type="submit" 
+                disabled={submittingGround} 
+                className="btn btn-emerald text-xs"
+              >
+                {submittingGround ? 'Saving Venue...' : 'Add Ground'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* EXPANDABLE HOST TOURNAMENT FORM */}
+      {showAddTournament && (
+        <div className="card border-2 border-amber-500/30 bg-amber-50/20 p-6 animate-in slide-in-from-top duration-200">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center font-bold">
+                <Trophy className="h-4 w-4" />
+              </div>
+              <h2 className="text-base font-bold text-slate-900">Host New Tournament</h2>
+            </div>
+            <button 
+              onClick={() => setShowAddTournament(false)}
+              className="rounded-lg p-1 text-slate-400 hover:text-slate-700"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          <form onSubmit={handleAddTournament} className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="md:col-span-2">
+              <label className="label">Tournament Title</label>
+              <input 
+                required 
+                value={tName} 
+                onChange={e => setTName(e.target.value)} 
+                className="input" 
+                placeholder="e.g. Summer Premier League 2026" 
+              />
+            </div>
+            <div>
+              <label className="label">Sport</label>
+              <select 
+                value={tSport} 
+                onChange={e => setTSport(e.target.value)} 
+                className="input"
+              >
+                <option>Basketball</option>
+                <option>Football</option>
+                <option>Cricket</option>
+                <option>Tennis</option>
+              </select>
+            </div>
+            <div>
+              <label className="label">Tournament Date</label>
+              <input 
+                type="date" 
+                required 
+                value={tDate} 
+                onChange={e => setTDate(e.target.value)} 
+                className="input" 
+              />
+            </div>
+            <div>
+              <label className="label">Location / Ground Name</label>
+              <input 
+                required 
+                value={tLoc} 
+                onChange={e => setTLoc(e.target.value)} 
+                className="input" 
+                placeholder="Main Arena" 
+              />
+            </div>
+            <div>
+              <label className="label">Entry Fee (₹)</label>
+              <input 
+                type="number" 
+                required 
+                min="0" 
+                value={tPrice} 
+                onChange={e => setTPrice(e.target.value)} 
+                className="input" 
+                placeholder="e.g. 500" 
+              />
+            </div>
+            <div className="md:col-span-3 flex justify-end gap-2 mt-2">
+              <button 
+                type="button" 
+                onClick={() => setShowAddTournament(false)}
+                className="btn btn-secondary text-xs"
+              >
+                Cancel
+              </button>
+              <button 
+                type="submit" 
+                disabled={submittingTournament} 
+                className="btn text-xs"
+              >
+                {submittingTournament ? 'Publishing...' : 'Publish Tournament'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* 1. YOUR GROUNDS AND HOURLY SLOTS */}
+      <section className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-teal-50 text-teal-700 flex items-center justify-center">
+              <Landmark className="h-4 w-4" />
+            </div>
+            <h2 className="text-lg font-extrabold text-slate-900">
+              Your Grounds & Live Slot Booking ({facilities.length})
+            </h2>
+          </div>
+          <span className="text-xs text-slate-500 hidden sm:inline">
+            Click any slot pill to toggle its booking state
+          </span>
+        </div>
+
+        {facilities.length === 0 ? (
+          <div className="card text-center py-12">
+            <Landmark className="h-10 w-10 text-slate-300 mx-auto mb-2" />
+            <h3 className="text-sm font-bold text-slate-700">No grounds added yet</h3>
+            <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+              Add your turf or ground to start accepting athlete reservations and managing hourly slots.
+            </p>
+            <button 
+              onClick={() => setShowAddGround(true)}
+              className="btn btn-sm btn-emerald mt-4"
+            >
+              <Plus className="h-4 w-4" />
+              Add Your First Ground
+            </button>
+          </div>
+        ) : (
           <div className="space-y-6">
-            {facilities.map(f => (
-              <div key={f.id} className="border border-line p-4 rounded-xl">
-                {f.image && <img src={f.image} alt={f.name} className="w-full h-40 object-cover rounded-lg mb-4" />}
-                <div className="flex justify-between items-start flex-wrap gap-4 mb-4">
-                  <div>
-                    <p className="font-bold text-lg">{f.name}</p>
-                    <p className="text-sm text-ink2">{f.sport} · {f.address}</p>
-                  </div>
-                  <div className="flex items-center gap-3 flex-wrap">
-                    <div className="flex items-center gap-1">
-                      <span className="text-xs text-ink2 font-bold">₹</span>
-                      <input type="number" defaultValue={f.price} onBlur={(e) => updatePrice(f.id, e.target.value)} className="w-20 border border-line rounded p-1 text-sm font-bold" />
+            {facilities.map((f) => (
+              <div 
+                key={f.id} 
+                className={`card p-6 border-slate-200 transition ${f.closed ? 'bg-slate-50/80 border-dashed' : ''}`}
+              >
+                {/* Header info */}
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+                  <div className="flex items-start gap-3.5">
+                    {f.image ? (
+                      <img 
+                        src={f.image} 
+                        alt={f.name} 
+                        className="h-16 w-16 sm:h-20 sm:w-20 rounded-xl object-cover shrink-0 border border-slate-200" 
+                      />
+                    ) : (
+                      <div className="h-16 w-16 sm:h-20 sm:w-20 rounded-xl bg-slate-100 flex items-center justify-center text-slate-400 shrink-0">
+                        <Landmark className="h-8 w-8" />
+                      </div>
+                    )}
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-extrabold text-lg text-slate-900">{f.name}</h3>
+                        <span className="badge badge-brand text-[10px]">{f.sport}</span>
+                        {f.closed && (
+                          <span className="badge badge-bad text-[10px]">Temporarily Closed</span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-500 mt-1 flex items-center gap-1">
+                        <MapPin className="h-3.5 w-3.5 text-slate-400" />
+                        {f.address}
+                      </p>
                     </div>
-                    <button onClick={() => toggleClosed(f.id, f.closed)} className={`btn btn-sm ${f.closed ? 'bg-bad text-white' : 'btn-ghost'}`}>{f.closed ? 'Reopen' : 'Close'}</button>
-                    <button onClick={() => deleteGround(f.id)} className="btn btn-sm text-bad border border-line hover:bg-bad/10">Delete</button>
+                  </div>
+
+                  {/* Actions & Price editor */}
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <div className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 shadow-2xs">
+                      <span className="text-xs font-bold text-slate-500">₹</span>
+                      <input 
+                        type="number" 
+                        defaultValue={f.price} 
+                        onBlur={(e) => updatePrice(f.id, e.target.value)} 
+                        className="w-16 text-xs font-extrabold text-slate-900 focus:outline-none" 
+                        title="Edit hourly rate"
+                      />
+                      <span className="text-[10px] text-slate-400">/hr</span>
+                    </div>
+
+                    <button
+                      onClick={() => toggleClosed(f.id, f.closed)}
+                      className={`btn btn-sm text-xs ${
+                        f.closed ? 'btn-emerald' : 'btn-secondary text-slate-600'
+                      }`}
+                    >
+                      {f.closed ? (
+                        <>
+                          <Unlock className="h-3.5 w-3.5" />
+                          Reopen Venue
+                        </>
+                      ) : (
+                        <>
+                          <Lock className="h-3.5 w-3.5" />
+                          Mark Closed
+                        </>
+                      )}
+                    </button>
+
+                    <button
+                      onClick={() => deleteGround(f.id)}
+                      className="btn-danger btn-sm text-xs"
+                      title="Delete this ground"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Delete
+                    </button>
                   </div>
                 </div>
-                <div className={`grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2 ${f.closed ? 'opacity-50 pointer-events-none' : ''}`}>
-                  {Object.keys(f.slots || {}).sort((a,b) => Number(a) - Number(b)).map(slot => (
-                    <button key={slot} onClick={() => toggleSlot(f.id, slot, f.slots[slot])} className={`p-2 rounded-lg text-xs font-bold text-center transition border ${f.slots[slot] ? 'bg-[#e1f5ec] text-ok border-[#ccecd9]' : 'bg-[#fde8e8] text-bad border-[#f3c4c4]'}`}>
-                      {formatSlot(slot)}<br/><span className="text-[10px] opacity-80">{f.slots[slot] ? '🟢 Available' : '🔴 Booked'}</span>
-                    </button>
-                  ))}
+
+                {/* Slots Matrix */}
+                <div className="mt-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                      <Clock className="h-3 w-3 text-slate-400" />
+                      Hourly Booking Availability (6 AM - 10 PM)
+                    </span>
+                    <div className="flex items-center gap-3 text-[11px]">
+                      <span className="inline-flex items-center gap-1 text-emerald-700 font-semibold">
+                        <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                        Available
+                      </span>
+                      <span className="inline-flex items-center gap-1 text-rose-700 font-semibold">
+                        <span className="h-2 w-2 rounded-full bg-rose-500" />
+                        Booked
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className={`grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2 ${
+                    f.closed ? 'opacity-40 pointer-events-none' : ''
+                  }`}>
+                    {Object.keys(f.slots || {})
+                      .sort((a, b) => Number(a) - Number(b))
+                      .map((slot) => {
+                        const isAvailable = f.slots[slot];
+                        return (
+                          <button
+                            key={slot}
+                            type="button"
+                            onClick={() => toggleSlot(f.id, slot, isAvailable)}
+                            className={`p-2 rounded-xl text-center border transition transform active:scale-95 ${
+                              isAvailable
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200/80 hover:bg-emerald-100/70'
+                                : 'bg-rose-50 text-rose-800 border-rose-200/80 hover:bg-rose-100/70'
+                            }`}
+                          >
+                            <span className="block text-xs font-black">{formatSlot(slot)}</span>
+                            <span className="block text-[10px] font-bold mt-0.5 opacity-90">
+                              {isAvailable ? 'Open' : 'Booked'}
+                            </span>
+                          </button>
+                        );
+                      })}
+                  </div>
                 </div>
               </div>
             ))}
           </div>
         )}
-      </div>
+      </section>
 
-      {/* ADD GROUND FORM */}
-      <div className="card">
-        <h2 className="text-lg font-extrabold mb-4">Add a Ground</h2>
-        <form onSubmit={handleAddFacility} className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
-          <div><label className="label">Ground Name</label><input required value={name} onChange={e=>setName(e.target.value)} className="input" /></div>
-          <div><label className="label">Address</label><input required value={address} onChange={e=>setAddress(e.target.value)} className="input" /></div>
-          <div><label className="label">Sport</label><select value={sport} onChange={e=>setSport(e.target.value)} className="input"><option>Basketball</option><option>Football</option><option>Cricket</option><option>Tennis</option></select></div>
-          <div><label className="label">Price (₹/hr)</label><input type="number" required min="1" value={price} onChange={e=>setPrice(e.target.value)} className="input" /></div>
-          <div className="md:col-span-2">
-            <label className="label">Ground Photo</label>
-            <input type="file" accept="image/*" onChange={e => setImageFile(e.target.files?.[0] || null)} className="input" />
+      {/* 2. ACTIVE TOURNAMENTS SECTION */}
+      <section className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center">
+              <Trophy className="h-4 w-4" />
+            </div>
+            <h2 className="text-lg font-extrabold text-slate-900">
+              Active Tournaments ({tournaments.length})
+            </h2>
           </div>
-          <button type="submit" disabled={submitting} className="btn md:col-span-2">{submitting ? 'Uploading...' : 'Add Ground'}</button>
-        </form>
-      </div>
+        </div>
+
+        {tournaments.length === 0 ? (
+          <div className="card text-center py-8">
+            <p className="text-xs text-slate-500">No tournaments published yet.</p>
+            <button 
+              onClick={() => setShowAddTournament(true)}
+              className="btn btn-sm btn-secondary mt-3 text-xs"
+            >
+              Host Your First Tournament
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {tournaments.map((t) => (
+              <div 
+                key={t.id} 
+                className="card card-hover border-slate-200 p-5 flex flex-col justify-between border-l-4 border-l-amber-500"
+              >
+                <div>
+                  <div className="flex justify-between items-start gap-2">
+                    <div>
+                      <span className="badge badge-brand text-[10px] mb-1">{t.sport}</span>
+                      <h4 className="font-bold text-base text-slate-900">{t.name}</h4>
+                    </div>
+                    <span className="badge badge-warn text-xs font-black">
+                      ₹{t.price}
+                    </span>
+                  </div>
+
+                  <div className="mt-4 space-y-1 text-xs text-slate-500">
+                    <p className="flex items-center gap-1.5">
+                      <MapPin className="h-3.5 w-3.5 text-slate-400" />
+                      <span>{t.loc}</span>
+                    </p>
+                    <p className="flex items-center gap-1.5">
+                      <Calendar className="h-3.5 w-3.5 text-slate-400" />
+                      <span>{t.date ? new Date(t.date).toDateString() : 'Date TBA'}</span>
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-400">
+                  <span>Status: Open for Entries</span>
+                  <span className="font-bold text-amber-600">Active</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   );
 }

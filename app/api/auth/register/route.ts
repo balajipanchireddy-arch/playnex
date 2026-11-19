@@ -7,7 +7,7 @@ import { ok, fail } from '@/lib/api/response';
 const Body = z.object({
   idToken: z.string().min(10),
   fullName: z.string().min(2),
-  role: z.enum(['player','staff','academy','store']),
+  role: z.enum(['player', 'academy', 'store']),
 });
 
 export async function POST(req: NextRequest) {

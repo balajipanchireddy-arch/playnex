@@ -19,8 +19,8 @@ export async function GET() {
     const academiesSnap = await adminDb.collection('academies').where('verificationStatus', '==', 'pending').get();
 
     const pending = [
-      ...storesSnap.docs.map(d => ({ id: d.id, ...d.data(), type: 'store', displayName: d.data().storeName })),
-      ...academiesSnap.docs.map(d => ({ id: d.id, ...d.data(), type: 'academy', displayName: d.data().academyName }))
+      ...storesSnap.docs.map((d: any) => ({ id: d.id, ...d.data(), type: 'store', displayName: d.data().storeName })),
+      ...academiesSnap.docs.map((d: any) => ({ id: d.id, ...d.data(), type: 'academy', displayName: d.data().academyName }))
     ];
 
     return ok(pending);

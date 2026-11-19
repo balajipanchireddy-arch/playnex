@@ -16,7 +16,7 @@ export async function GET() {
   if (!session) return fail('unauthorized', 'Login required', 401);
   try {
     const snap = await adminDb.collection('facilities').where('academyId', '==', session.uid).get();
-    const facilities = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const facilities = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
     return ok(facilities);
   } catch (e: any) { return fail('server_error', e.message, 500); }
 }

@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
     const u = userDoc.data()!;
     if (u.accountStatus === 'suspended') return fail('suspended', 'Account suspended', 403);
     const rolesSnap = await adminDb.collection('userRoles').where('userId','==',decoded.uid).where('status','==','active').get();
-    const roles = rolesSnap.docs.map(d => d.data().roleId);
+    const roles = rolesSnap.docs.map((d: any) => d.data().roleId);
     if (!roles.length) return fail('no_roles', 'No roles assigned to this account', 403);
     await setSessionCookie(parsed.data.idToken);
     return ok({ user: u, roles });
@@ -29,7 +29,7 @@ export async function GET() {
   const userDoc = await adminDb.collection('users').doc(decoded.uid).get();
   if (!userDoc.exists) return fail('not_found', 'User missing', 404);
   const rolesSnap = await adminDb.collection('userRoles').where('userId','==',decoded.uid).where('status','==','active').get();
-  const roles = rolesSnap.docs.map(d => d.data().roleId);
+  const roles = rolesSnap.docs.map((d: any) => d.data().roleId);
   return ok({ user: userDoc.data(), roles });
 }
 export async function DELETE() {
