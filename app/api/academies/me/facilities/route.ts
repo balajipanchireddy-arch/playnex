@@ -29,7 +29,6 @@ export async function POST(req: NextRequest) {
     if (!parsed.success) return fail('invalid', 'Invalid input', 400);
     const { name, address, sport, price } = parsed.data;
     
-    // Generate default time slots (6 AM to 10 PM)
     const defaultSlots: Record<string, boolean> = {};
     for (let i = 6; i <= 22; i++) defaultSlots[i.toString()] = true;
 

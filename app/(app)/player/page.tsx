@@ -1,6 +1,17 @@
 'use client';
 import { useState, useEffect } from 'react';
 
+function StarRating({ rating, count }: { rating: number, count: number }) {
+  if (!count) return <span className="text-xs text-ink2">No ratings</span>;
+  return (
+    <div className="flex items-center gap-1 text-sm">
+      <span className="text-yellow-500 text-lg leading-none">★</span>
+      <span className="font-bold">{rating}</span>
+      <span className="text-xs text-ink2">({count})</span>
+    </div>
+  );
+}
+
 export default function PlayerDashboard() {
   const [profile, setProfile] = useState<any>(null);
   const [facilities, setFacilities] = useState<any[]>([]);
@@ -9,8 +20,8 @@ export default function PlayerDashboard() {
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState('');
 
-  const [search, setSearch] = useState({ sport: 'Basketball', players: 5, radius: 5, time: 18 });
-  const [searched, setSearched] = useState(false);
+  const [search, setSearch] = useState({ sport: 'All' });
+  const [ratingModal, setRatingModal] = useState<{ id: string, type: 'facility' | 'product', name: string } | null>(null);
 
   async function loadData() {
     setLoading(true);
@@ -27,66 +38,83 @@ export default function PlayerDashboard() {
     }).finally(() => setLoading(false));
   }
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  useEffect(() => { loadData(); }, []);
 
   async function toggleAvailability() {
     if (!profile) return;
     const newState = !profile.available;
     setProfile({ ...profile, available: newState });
-    await fetch('/api/player/profile', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ available: newState })
-    });
+    await fetch('/api/player/profile', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ available: newState }) });
     setMsg(newState ? 'You are visible to nearby players' : 'You are no longer listed as available');
-  }
-
-  function handleSearch(e: React.FormEvent) {
-    e.preventDefault();
-    setSearched(true);
   }
 
   async function handleBook(f: any) {
     setMsg('');
-    const res = await fetch('/api/bookings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ facilityId: f.id, facilityName: f.name, slot: '18', price: f.price })
-    });
-    const data = await res.json();
-    if (data.ok) {
-      setMsg(`✅ Successfully booked ${f.name} for 6:00 PM!`);
-      loadData();
-    } else { setMsg(`❌ Error: ${data.error.message}`); }
+    const res = await fetch('/api/bookings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ facilityId: f.id, facilityName: f.name, slot: '18', price: f.price }) });
+    if ((await res.json()).ok) { setMsg(`✅ Booked ${f.name}!`); loadData(); } else { setMsg(`❌ Error booking.`); }
   }
 
   async function handleBuy(p: any) {
     setMsg('');
-    const res = await fetch('/api/orders', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ productId: p.id, productName: p.name, storeId: p.storeId, price: p.price, qty: 1 })
+    const res = await fetch('/api/orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ productId: p.id, productName: p.name, storeId: p.storeId, price: p.price, qty: 1 }) });
+    if ((await res.json()).ok) { setMsg(`✅ Order placed for ${p.name}!`); loadData(); } else { setMsg(`❌ Error ordering.`); }
+  }
+
+  async function handleRegisterEvent(e: any) {
+    setMsg('');
+    const res = await fetch('/api/events/register', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ eventId: e.id })
     });
     const data = await res.json();
-    if (data.ok) { setMsg(`✅ Order placed for ${p.name}!`); loadData(); } 
-    else { setMsg(`❌ Error: ${data.error.message}`); }
+    if (data.ok) setMsg(`✅ Successfully registered for ${e.name}!`);
+    else setMsg(`❌ ${data.error.message}`);
+  }
+
+  async function submitRating(score: number) {
+    if (!ratingModal) return;
+    setMsg('');
+    const res = await fetch('/api/ratings', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ targetId: ratingModal.id, targetType: ratingModal.type, rating: score })
+    });
+    if ((await res.json()).ok) {
+      setMsg(`✅ Thanks for rating ${ratingModal.name} ${score} stars!`);
+      setRatingModal(null); loadData();
+    }
   }
 
   if (loading) return <p className="text-center mt-10">Loading dashboard...</p>;
   if (!profile) return <p className="text-center mt-10 text-bad">Could not load profile.</p>;
 
+  const filteredFacilities = facilities.filter(f => search.sport === 'All' || f.sport === search.sport);
+  const filteredProducts = products.filter(p => search.sport === 'All' || p.sport === search.sport);
+  const filteredEvents = events.filter(e => search.sport === 'All' || e.sport === search.sport);
+
   return (
-    <div className="space-y-6">
-      {/* 1. Profile Bar */}
+    <div className="space-y-8 relative">
+      
+      {ratingModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="card text-center max-w-sm w-full">
+            <h3 className="font-extrabold text-xl mb-2">Rate {ratingModal.name}</h3>
+            <p className="text-sm text-ink2 mb-6">How was your experience?</p>
+            <div className="flex justify-center gap-2 mb-6">
+              {[1,2,3,4,5].map(star => (
+                <button key={star} onClick={() => submitRating(star)} className="text-4xl text-gray-300 hover:text-yellow-400 transition">★</button>
+              ))}
+            </div>
+            <button onClick={() => setRatingModal(null)} className="btn btn-ghost w-full">Cancel</button>
+          </div>
+        </div>
+      )}
+
       <section className="card flex justify-between items-center flex-wrap gap-4">
         <div>
           <h2 className="text-2xl font-extrabold">Welcome, {profile.name} 👋</h2>
           <p className="text-sm text-ink2 mt-1">{profile.skill} player · {profile.location}</p>
         </div>
         <div className="flex gap-2">
-          <button className="btn btn-ghost btn-sm">Edit profile</button>
           <button onClick={toggleAvailability} className={`btn btn-sm ${profile.available ? 'bg-ok text-white' : 'bg-gray-200 text-gray-700'}`}>
             {profile.available ? '🟢 Available to play' : '⚪ Not available'}
           </button>
@@ -95,99 +123,91 @@ export default function PlayerDashboard() {
 
       {msg && <div className="p-3 rounded-xl bg-brand/10 text-brand font-semibold text-sm">{msg}</div>}
 
-      {/* 2. Search Form */}
       <section className="card">
-        <h2 className="text-lg font-extrabold mb-4 flex justify-between items-end">
-          <span>⚡ PLAY NOW</span>
-          <span className="text-sm font-normal text-ink2">Find a game, teammates and a nearby ground</span>
-        </h2>
-        <form onSubmit={handleSearch} className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
-          <div>
-            <label className="label">Sport</label>
-            <select className="input" value={search.sport} onChange={e => setSearch({...search, sport: e.target.value})}>
-              <option>Basketball</option><option>Football</option><option>Cricket</option><option>Tennis</option><option>Badminton</option>
+        <div className="flex flex-wrap gap-4 items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="font-bold text-sm text-ink2">Filter by Sport:</span>
+            <select className="input py-1.5 min-w-[150px]" value={search.sport} onChange={e => setSearch({...search, sport: e.target.value})}>
+              <option value="All">All Sports</option>
+              <option>Basketball</option><option>Football</option><option>Cricket</option><option>Tennis</option>
             </select>
           </div>
-          <div>
-            <label className="label">Players needed</label>
-            <input type="number" className="input" value={search.players} onChange={e => setSearch({...search, players: Number(e.target.value)})} />
-          </div>
-          <div>
-            <label className="label">Within (km)</label>
-            <input type="number" className="input" value={search.radius} onChange={e => setSearch({...search, radius: Number(e.target.value)})} />
-          </div>
-          <button type="submit" className="btn w-full">Find my game →</button>
-        </form>
+        </div>
       </section>
 
-      {/* 3. Results Sections */}
-      {searched ? (
-        <div className="space-y-6">
-          
-          {/* Games Near You */}
-          <section className="card">
-            <h2 className="text-lg font-extrabold mb-4">🏆 Games near you</h2>
-            {events.length === 0 ? <p className="text-sm text-ink2">No upcoming events.</p> : (
-              <div className="space-y-3">
-                {events.map(e => (
-                  <div key={e.id} className="flex justify-between items-center border border-line p-4 rounded-xl flex-wrap gap-2">
-                    <div>
-                      <p className="font-bold">{e.name}</p>
-                      <p className="text-xs text-ink2">📍 {e.loc} · 📅 {e.date}</p>
-                    </div>
-                    <button className="btn btn-sm">Register</button>
+      {filteredEvents.length > 0 && (
+        <section>
+          <h2 className="text-xl font-extrabold mb-4 flex items-center gap-2">🏆 Tournaments near you</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {filteredEvents.map(e => (
+              <div key={e.id} className="card flex flex-col justify-between border-l-4 border-brand">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h3 className="font-bold text-lg">{e.name}</h3>
+                    <p className="text-xs text-ink2 mt-1">📍 {e.loc || 'Location TBA'} · {e.sport}</p>
+                    <p className="text-xs font-semibold text-brand mt-2">📅 {new Date(e.date).toDateString()}</p>
                   </div>
-                ))}
+                  <span className="badge badge-warn">Entry: ₹{e.price}</span>
+                </div>
+                <button onClick={() => handleRegisterEvent(e)} className="btn btn-sm mt-4 w-full">Register Now</button>
               </div>
-            )}
-          </section>
-
-          {/* Academies Near You */}
-          <section className="card">
-            <h2 className="text-lg font-extrabold mb-4">🏟️ Academies near you</h2>
-            {facilities.length === 0 ? <p className="text-sm text-ink2">No grounds available.</p> : (
-              <div className="space-y-3">
-                {facilities.map(f => (
-                  <div key={f.id} className="flex justify-between items-center border border-line p-4 rounded-xl flex-wrap gap-2">
-                    <div>
-                      <p className="font-bold">{f.name}</p>
-                      <p className="text-xs text-ink2">📍 {f.address || 'Location not provided'} · {f.sport}</p>
-                      <p className="text-sm font-semibold text-brand mt-1">₹{f.price} / hour</p>
-                    </div>
-                    <button onClick={() => handleBook(f)} className="btn btn-sm">Book 6 PM</button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-
-          {/* Stores Near By */}
-          <section className="card">
-            <h2 className="text-lg font-extrabold mb-4">🏪 Stores nearby</h2>
-            {products.length === 0 ? <p className="text-sm text-ink2">No products in stock.</p> : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {products.map(p => (
-                  <div key={p.id} className="border border-line p-4 rounded-xl flex flex-col justify-between">
-                    <div>
-                      <p className="font-bold">{p.name}</p>
-                      <p className="text-xs text-ink2">{p.sport} · {p.storeName}</p>
-                      <p className="text-sm font-semibold text-brand mt-1">₹{p.price}</p>
-                    </div>
-                    <div className="flex justify-between items-center mt-3">
-                      <span className={`badge ${p.qty > 0 ? 'badge-ok' : 'badge-bad'}`}>{p.qty > 0 ? `${p.qty} in stock` : 'Out of stock'}</span>
-                      <button onClick={() => handleBuy(p)} disabled={p.qty === 0} className="btn btn-sm">Buy 1</button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-        </div>
-      ) : (
-        <div className="card text-center py-10 text-ink2">
-          Choose a sport and tap <b>Find my game</b>. PlayNex will bring together nearby grounds, players, equipment and competitions.
-        </div>
+            ))}
+          </div>
+        </section>
       )}
+
+      <section>
+        <h2 className="text-xl font-extrabold mb-4 flex items-center gap-2">🏟️ Academies & Grounds near you</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          {filteredFacilities.map(f => (
+            <div key={f.id} className="card p-0 overflow-hidden flex flex-col hover:shadow-lg transition relative">
+              {f.image ? <img src={f.image} alt={f.name} className="w-full h-48 object-cover" /> : <div className="w-full h-48 bg-gray-100 flex items-center justify-center text-4xl">🏟️</div>}
+              <div className="p-5 flex-1 flex flex-col justify-between">
+                <div>
+                  <div className="flex justify-between items-start">
+                    <h3 className="font-bold text-lg">{f.name}</h3>
+                    <StarRating rating={f.rating || 0} count={f.ratingCount || 0} />
+                  </div>
+                  <p className="text-xs text-ink2 mt-1">📍 {f.address || 'Location not provided'}</p>
+                  <div className="flex justify-between items-center mt-3">
+                    <span className="badge badge-ok">{f.sport}</span>
+                    <span className="font-bold text-brand">₹{f.price}/hr</span>
+                  </div>
+                </div>
+                <div className="mt-5 flex gap-2">
+                  <button onClick={() => handleBook(f)} className="btn flex-1">Book</button>
+                  <button onClick={() => setRatingModal({ id: f.id, type: 'facility', name: f.name })} className="btn btn-ghost flex-1">Rate</button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section>
+        <h2 className="text-xl font-extrabold mb-4 flex items-center gap-2">🏪 Gear & Stores nearby</h2>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          {filteredProducts.map(p => (
+            <div key={p.id} className="card p-0 overflow-hidden flex flex-col hover:shadow-lg transition relative">
+              {p.image ? <img src={p.image} alt={p.name} className="w-full h-32 object-cover" /> : <div className="w-full h-32 bg-gray-100 flex items-center justify-center text-4xl">🎒</div>}
+              <div className="p-4 flex-1 flex flex-col justify-between">
+                <div>
+                  <div className="flex justify-between items-start gap-1">
+                    <h3 className="font-bold text-sm leading-tight">{p.name}</h3>
+                    <StarRating rating={p.rating || 0} count={p.ratingCount || 0} />
+                  </div>
+                  <p className="text-[11px] text-ink2 mt-1">{p.storeName}</p>
+                  <p className="font-bold text-brand mt-2">₹{p.price}</p>
+                </div>
+                <div className="mt-3 flex flex-col gap-2">
+                  <button onClick={() => handleBuy(p)} disabled={p.qty === 0} className="btn btn-sm w-full">{p.qty === 0 ? 'Out of stock' : 'Buy Now'}</button>
+                  <button onClick={() => setRatingModal({ id: p.id, type: 'product', name: p.name })} className="text-xs font-bold text-brand hover:underline">Rate this item</button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }
