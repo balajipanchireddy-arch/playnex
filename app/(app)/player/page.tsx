@@ -729,7 +729,17 @@ export default function PlayerDashboard() {
 
                   <div className="p-5">
                     <div className="flex items-start justify-between gap-2">
-                      <h3 className="font-bold text-base text-slate-900">{f.name}</h3>
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <h3 className="font-bold text-base text-slate-900">{f.name}</h3>
+                          {f.academyVerification === 'approved' && (
+                            <span className="badge bg-emerald-50 text-emerald-700 border border-emerald-200/60 text-[9px] font-bold" title="Verified Arena">
+                              Verified
+                            </span>
+                          )}
+                        </div>
+                        {f.academyName && <p className="text-[11px] text-slate-400 font-medium">{f.academyName}</p>}
+                      </div>
                       <StarRating rating={f.rating || 0} count={f.ratingCount || 0} />
                     </div>
 

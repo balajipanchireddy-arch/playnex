@@ -43,8 +43,14 @@ export async function POST(req: NextRequest) {
     if (!parsed.success) return fail('invalid', 'Invalid input payload', 400);
     const { name, sport, date, loc, price } = parsed.data;
     
+    const academyDoc = await adminDb.collection('academies').doc(session.uid).get();
+    const academyName = academyDoc.exists ? academyDoc.data()?.academyName : 'Sports Academy';
+    const academyVerification = academyDoc.exists ? academyDoc.data()?.verificationStatus : 'pending';
+
     await adminDb.collection('events').add({
       academyId: session.uid,
+      academyName,
+      academyVerification,
       name,
       sport,
       date,

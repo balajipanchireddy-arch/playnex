@@ -47,8 +47,14 @@ export async function POST(req: NextRequest) {
     const defaultSlots: Record<string, boolean> = {};
     for (let i = 6; i <= 22; i++) defaultSlots[i.toString()] = true;
 
+    const academyDoc = await adminDb.collection('academies').doc(session.uid).get();
+    const academyName = academyDoc.exists ? academyDoc.data()?.academyName : 'Sports Academy';
+    const academyVerification = academyDoc.exists ? academyDoc.data()?.verificationStatus : 'pending';
+
     await adminDb.collection('facilities').add({
       academyId: session.uid,
+      academyName,
+      academyVerification,
       name,
       address,
       sport,

@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 
 export default function AcademyDashboard() {
+  const [academy, setAcademy] = useState<any>(null);
   const [facilities, setFacilities] = useState<any[]>([]);
   const [tournaments, setTournaments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -54,10 +55,12 @@ export default function AcademyDashboard() {
 
   async function loadData() {
     try {
-      const [facRes, tourRes] = await Promise.all([
+      const [acadRes, facRes, tourRes] = await Promise.all([
+        fetch('/api/academies/me').then(r => r.json()),
         fetch('/api/academies/me/facilities').then(r => r.json()),
         fetch('/api/academies/me/events').then(r => r.json())
       ]);
+      if (acadRes.ok) setAcademy(acadRes.data);
       if (facRes.ok) setFacilities(facRes.data);
       if (tourRes.ok) setTournaments(tourRes.data);
     } catch {
@@ -224,15 +227,25 @@ export default function AcademyDashboard() {
               <Landmark className="h-7 w-7" />
             </div>
             <div>
-              <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-teal-300 border border-white/10 mb-1">
-                <Sparkles className="h-3 w-3" />
-                Venue Operator
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  Sports Venue Partner
+                </span>
+                <span className={`badge text-[10px] font-black uppercase ${
+                  academy?.verificationStatus === 'approved' 
+                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' 
+                    : academy?.verificationStatus === 'rejected'
+                    ? 'bg-rose-500/20 text-rose-300 border-rose-500/30'
+                    : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                }`}>
+                  {academy?.verificationStatus === 'approved' ? 'Verified Academy' : academy?.verificationStatus === 'rejected' ? 'Verification Rejected' : 'Verification Pending'}
+                </span>
               </div>
               <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-                Academy & Arena Control
+                {academy?.academyName || 'Academy & Arena Control'}
               </h1>
               <p className="text-xs text-slate-400 mt-0.5">
-                Manage turf reservations, live booking slots, and competitive tournaments.
+                {academy?.address || 'Manage turf reservations, live booking slots, and competitive tournaments.'}
               </p>
             </div>
           </div>
@@ -271,6 +284,19 @@ export default function AcademyDashboard() {
           </div>
         </div>
       </div>
+
+      {/* Verification Notice Banner */}
+      {academy && academy.verificationStatus !== 'approved' && (
+        <div className="rounded-2xl border border-amber-200/60 bg-amber-50 p-4 text-xs text-amber-900 flex items-start gap-3 shadow-xs">
+          <Clock className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+          <div>
+            <p className="font-bold">Academy Verification in Progress</p>
+            <p className="mt-0.5 text-amber-700">
+              Your sports academy profile is currently pending administrator verification. Once verified by an admin, your venue profile and grounds will be marked verified across PlayNex.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* EXPANDABLE ADD GROUND FORM */}
       {showAddGround && (
