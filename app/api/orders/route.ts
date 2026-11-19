@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { adminDb } from '@/lib/firebase/admin';
 import { verifySession } from '@/lib/auth/session';
 import { ok, fail } from '@/lib/api/response';
+import { dispatchNotification } from '@/lib/notifications/dispatch';
+import { logActivity } from '@/lib/firebase/activity';
 
 const Body = z.object({
   productId: z.string().min(1),
@@ -34,7 +36,6 @@ export async function POST(req: NextRequest) {
       const productData = productSnap.data();
       const currentQty = typeof productData.qty === 'number' ? productData.qty : 0;
       
-      // Authoritative pricing from database to prevent client-side price manipulation
       const authoritativePrice = typeof productData.price === 'number' ? productData.price : 0;
       const verifiedStoreId = productData.storeId || storeId;
 
@@ -53,7 +54,7 @@ export async function POST(req: NextRequest) {
 
       // Create confirmed order
       const orderRef = adminDb.collection('orders').doc();
-      transaction.set(orderRef, {
+      const orderData = {
         playerId: session.uid,
         storeId: verifiedStoreId,
         productId,
@@ -63,13 +64,37 @@ export async function POST(req: NextRequest) {
         total: authoritativePrice * qty,
         status: 'pending',
         createdAt: Date.now(),
-      });
+      };
+      transaction.set(orderRef, orderData);
 
       return {
         orderId: orderRef.id,
         remainingQty,
         total: authoritativePrice * qty,
+        productName: productData.name || productName,
+        storeName: productData.storeName || 'Verified Store',
       };
+    });
+
+    await logActivity({
+      userId: session.uid,
+      userName: session.email || 'Customer',
+      action: 'order_created',
+      entityType: 'order',
+      entityId: transactionResult.orderId,
+      details: `Placed order for ${qty}x ${transactionResult.productName} (Total: ₹${transactionResult.total})`,
+    });
+
+    // AUTOMATIC NOTIFICATION: Order confirmation to customer
+    await dispatchNotification({
+      title: '✅ Order Confirmed!',
+      message: `Your order for "${transactionResult.productName}" (Qty: ${qty}, ₹${transactionResult.total}) has been received and is being prepared.`,
+      category: 'order',
+      targetRole: 'player',
+      targetUserId: session.uid,
+      link: '/player',
+      senderName: transactionResult.storeName,
+      idempotencyKey: `notif_order_placed_${transactionResult.orderId}`,
     });
 
     return ok({ success: true, ...transactionResult });

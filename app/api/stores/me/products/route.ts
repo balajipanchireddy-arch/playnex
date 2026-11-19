@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { adminDb } from '@/lib/firebase/admin';
 import { verifySession } from '@/lib/auth/session';
 import { ok, fail } from '@/lib/api/response';
+import { dispatchNotification } from '@/lib/notifications/dispatch';
+import { logActivity } from '@/lib/firebase/activity';
 
 const Body = z.object({
   name: z.string().min(2),
@@ -45,7 +47,7 @@ export async function POST(req: NextRequest) {
     const storeDoc = await adminDb.collection('stores').doc(session.uid).get();
     const storeName = storeDoc.exists ? storeDoc.data()?.storeName : 'Verified Store';
 
-    await adminDb.collection('products').add({ 
+    const docRef = await adminDb.collection('products').add({ 
       storeId: session.uid, 
       storeName, 
       name, 
@@ -56,7 +58,32 @@ export async function POST(req: NextRequest) {
       ratingCount: 0,
       createdAt: Date.now() 
     });
-    return ok({ success: true });
+
+    await logActivity({
+      userId: session.uid,
+      userName: storeName,
+      action: 'product_created',
+      entityType: 'order',
+      entityId: docRef.id,
+      details: `${storeName} added gear "${name}" (${sport}) at ₹${price}`,
+    });
+
+    // AUTOMATIC STORE-TO-PLAYER NOTIFICATION:
+    // Only inform players interested in this sport if in stock
+    if (qty > 0) {
+      await dispatchNotification({
+        title: `🏷️ New Gear Available: ${name}`,
+        message: `${storeName} added new ${sport} gear: ${name} (₹${price}). Check out the sports store!`,
+        category: 'store',
+        targetRole: 'player',
+        targetSport: sport,
+        link: '/player',
+        senderName: storeName,
+        idempotencyKey: `notif_product_added_${docRef.id}`,
+      });
+    }
+
+    return ok({ success: true, id: docRef.id });
   } catch (e: any) { return fail('server_error', e.message, 500); }
 }
 
@@ -79,11 +106,27 @@ export async function PATCH(req: NextRequest) {
     if (!prodSnap.exists) return fail('not_found', 'Product not found', 404);
     if (prodSnap.data().storeId !== session.uid) return fail('forbidden', 'Unauthorized to modify this product', 403);
 
+    const existing = prodSnap.data();
     const updates: any = {};
     if (qty !== undefined) updates.qty = Math.max(0, qty);
     if (price !== undefined) updates.price = price;
     
     await prodRef.update(updates);
+
+    // If price dropped meaningfully, notify interested players
+    if (price !== undefined && price < existing.price) {
+      await dispatchNotification({
+        title: `🔥 Price Drop: ${existing.name}`,
+        message: `Special offer on ${existing.name}! Price dropped from ₹${existing.price} to ₹${price}.`,
+        category: 'store',
+        targetRole: 'player',
+        targetSport: existing.sport,
+        link: '/player',
+        senderName: existing.storeName || 'Sports Store',
+        idempotencyKey: `notif_price_drop_${productId}_${price}`,
+      });
+    }
+
     return ok({ success: true });
   } catch (e: any) { return fail('server_error', e.message, 500); }
 }

@@ -69,7 +69,7 @@ export default async function DashboardPage() {
     .get();
 
   const rawRoles = rolesSnap.docs.map((d: any) => d.data().roleId as string);
-  // Filter out any deprecated staff role
+  // Exactly 4 portals: player, academy, store, admin
   const roles = rawRoles.filter((r: string) => r !== 'staff');
 
   if (!roles.length) {

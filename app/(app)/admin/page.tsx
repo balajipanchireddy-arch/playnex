@@ -3,28 +3,95 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { 
-  ShieldCheck, 
-  ShieldAlert,
+  LayoutDashboard, 
+  Users, 
   Trophy, 
   Landmark, 
   ShoppingBag, 
+  Calendar, 
+  Bell, 
+  BarChart3, 
+  History, 
+  Settings, 
   CheckCircle2, 
   XCircle, 
   AlertCircle, 
   Clock, 
-  ArrowUpRight, 
+  Plus, 
+  Search, 
+  Filter, 
   MapPin, 
+  ShieldCheck, 
+  Sparkles, 
+  Trash2, 
+  Edit3, 
+  Send, 
+  ArrowUpRight, 
+  UserCheck, 
   X,
-  Sparkles,
-  Users
+  Eye,
+  Megaphone,
+  Radio,
+  FileText,
+  AlertTriangle,
+  Loader2
 } from 'lucide-react';
 
+type SidebarTab = 
+  | 'dashboard' 
+  | 'users' 
+  | 'players' 
+  | 'academies' 
+  | 'stores' 
+  | 'tournaments' 
+  | 'matches' 
+  | 'notifications' 
+  | 'analytics' 
+  | 'activity' 
+  | 'settings';
+
 export default function AdminDashboard() {
-  const [requests, setRequests] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState<SidebarTab>('dashboard');
   const [loading, setLoading] = useState(true);
   const [isForbidden, setIsForbidden] = useState(false);
   const [notification, setNotification] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
-  const [reviewingId, setReviewingId] = useState<string | null>(null);
+
+  // Core Data
+  const [analytics, setAnalytics] = useState<any>(null);
+  const [tournaments, setTournaments] = useState<any[]>([]);
+  const [usersList, setUsersList] = useState<any[]>([]);
+  const [pendingRequests, setPendingRequests] = useState<any[]>([]);
+  const [allNotifications, setAllNotifications] = useState<any[]>([]);
+
+  // Modals & Action States
+  const [showCreateTournament, setShowCreateTournament] = useState(false);
+  const [showSendAnnouncement, setShowSendAnnouncement] = useState(false);
+  const [viewingParticipants, setViewingParticipants] = useState<{ tournament: any; list: any[] } | null>(null);
+  const [tournamentToDelete, setTournamentToDelete] = useState<any | null>(null);
+  const [submittingAction, setSubmittingAction] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  // Tournament Form State
+  const [tName, setTName] = useState('');
+  const [tSport, setTSport] = useState('Basketball');
+  const [tCategory, setTCategory] = useState('Open Championship');
+  const [tType, setTType] = useState<'individual' | 'team'>('individual');
+  const [tDesc, setTDesc] = useState('');
+  const [tVenue, setTVenue] = useState('');
+  const [tDate, setTDate] = useState('');
+  const [tDeadline, setTDeadline] = useState('');
+  const [tMax, setTMax] = useState('32');
+  const [tFee, setTFee] = useState('500');
+  const [tRules, setTRules] = useState('');
+  const [tStatus, setTStatus] = useState<string>('Registration Open');
+
+  // Announcement Form State
+  const [notifTitle, setNotifTitle] = useState('');
+  const [notifMessage, setNotifMessage] = useState('');
+  const [notifCategory, setNotifCategory] = useState<'announcement' | 'tournament' | 'system'>('announcement');
+  const [notifRole, setNotifRole] = useState<'all' | 'player' | 'academy' | 'store'>('all');
+  const [notifSport, setNotifSport] = useState<string>('All');
+  const [notifLink, setNotifLink] = useState('');
 
   function notify(type: 'ok' | 'err', text: string) {
     setNotification({ type, text });
@@ -33,58 +100,224 @@ export default function AdminDashboard() {
     }, 4500);
   }
 
-  async function fetchPending() {
+  async function loadAdminData() {
     setLoading(true);
     try {
-      const res = await fetch('/api/admin/verifications');
-      if (res.status === 403 || res.status === 401) {
+      const [analyticsRes, tourRes, verifRes, usersRes, notifRes] = await Promise.all([
+        fetch('/api/admin/analytics'),
+        fetch('/api/tournaments'),
+        fetch('/api/admin/verifications'),
+        fetch('/api/admin/users'),
+        fetch('/api/notifications'),
+      ]);
+
+      if (analyticsRes.status === 403 || analyticsRes.status === 401) {
         setIsForbidden(true);
         return;
       }
-      const data = await res.json();
-      if (data.ok) {
-        setRequests(data.data);
-      } else {
-        notify('err', data.error?.message || 'Error loading verification queue.');
-      }
-    } catch {
-      notify('err', 'Network error fetching pending requests.');
+
+      const [aData, tData, vData, uData, nData] = await Promise.all([
+        analyticsRes.json(),
+        tourRes.json(),
+        verifRes.json(),
+        usersRes.json(),
+        notifRes.json(),
+      ]);
+
+      if (aData.ok) setAnalytics(aData.data);
+      if (tData.ok) setTournaments(tData.data || []);
+      if (vData.ok) setPendingRequests(vData.data || []);
+      if (uData.ok) setUsersList(uData.data || []);
+      if (nData.ok) setAllNotifications(nData.data || []);
+    } catch (e) {
+      notify('err', 'Network error loading admin portal.');
     } finally {
       setLoading(false);
     }
   }
 
-  useEffect(() => { 
-    fetchPending(); 
+  useEffect(() => {
+    loadAdminData();
   }, []);
 
-  async function handleReview(id: string, type: 'store' | 'academy', status: 'approved' | 'rejected') {
-    setReviewingId(id);
+  async function handleCreateTournament(e: React.FormEvent) {
+    e.preventDefault();
+    setSubmittingAction(true);
+    try {
+      const payload = {
+        name: tName,
+        sport: tSport,
+        category: tCategory,
+        participationType: tType,
+        description: tDesc,
+        venue: tVenue,
+        date: tDate,
+        registrationDeadline: tDeadline || tDate,
+        maxParticipants: Number(tMax),
+        entryFee: Number(tFee),
+        rules: tRules,
+        status: tStatus,
+      };
+
+      const res = await fetch('/api/tournaments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const json = await res.json();
+      if (json.ok) {
+        notify('ok', `Tournament "${tName}" created! Relevant players notified automatically.`);
+        setShowCreateTournament(false);
+        resetTournamentForm();
+        loadAdminData();
+      } else {
+        notify('err', json.error?.message || 'Failed to create tournament.');
+      }
+    } catch {
+      notify('err', 'Network error.');
+    } finally {
+      setSubmittingAction(false);
+    }
+  }
+
+  async function handleUpdateTournamentStatus(id: string, status: string) {
+    try {
+      const res = await fetch(`/api/tournaments/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+      const json = await res.json();
+      if (json.ok) {
+        notify('ok', `Tournament status updated to ${status}. Registered players notified automatically.`);
+        setTournaments(tournaments.map(t => t.id === id ? { ...t, status } : t));
+      } else {
+        notify('err', json.error?.message || 'Update failed');
+      }
+    } catch {
+      notify('err', 'Network error');
+    }
+  }
+
+  async function handleConfirmDelete() {
+    if (!tournamentToDelete) return;
+    const target = tournamentToDelete;
+    setDeletingId(target.id);
+
+    try {
+      const res = await fetch(`/api/tournaments/${target.id}`, { method: 'DELETE' });
+      const json = await res.json();
+
+      if (json.ok) {
+        notify('ok', `Tournament "${target.name}" deleted successfully. Affected players notified.`);
+        setTournaments(prev => prev.filter(t => t.id !== target.id));
+        setTournamentToDelete(null);
+
+        // Update analytics totals in state immediately
+        if (analytics?.totals) {
+          setAnalytics({
+            ...analytics,
+            totals: {
+              ...analytics.totals,
+              tournaments: Math.max(0, (analytics.totals.tournaments || 1) - 1),
+              registrations: Math.max(0, (analytics.totals.registrations || 0) - (target.registeredCount || 0)),
+            }
+          });
+        }
+      } else {
+        notify('err', json.error?.message || 'Failed to delete tournament.');
+      }
+    } catch {
+      notify('err', 'Network error during deletion.');
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  async function handleViewParticipants(tournament: any) {
+    try {
+      const res = await fetch(`/api/tournaments/${tournament.id}/registrations`);
+      const json = await res.json();
+      if (json.ok) {
+        setViewingParticipants({ tournament, list: json.data || [] });
+      }
+    } catch {
+      notify('err', 'Failed to fetch participant list.');
+    }
+  }
+
+  async function handleReviewPartner(id: string, type: 'store' | 'academy', status: 'approved' | 'rejected') {
     try {
       const res = await fetch('/api/admin/verifications', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, type, status })
+        body: JSON.stringify({ id, type, status }),
       });
-      const data = await res.json();
-      if (data.ok) {
-        notify('ok', `${type === 'store' ? 'Store' : 'Academy'} ${status} successfully!`);
-        setRequests(requests.filter(r => r.id !== id));
+      const json = await res.json();
+      if (json.ok) {
+        notify('ok', `${type === 'store' ? 'Store' : 'Academy'} ${status}!`);
+        setPendingRequests(pendingRequests.filter(r => r.id !== id));
+        loadAdminData();
       } else {
-        notify('err', data.error?.message || 'Review action failed.');
+        notify('err', json.error?.message || 'Review failed.');
       }
     } catch {
-      notify('err', 'Network error during review.');
-    } finally {
-      setReviewingId(null);
+      notify('err', 'Network error.');
     }
+  }
+
+  async function handleSendAnnouncement(e: React.FormEvent) {
+    e.preventDefault();
+    setSubmittingAction(true);
+    try {
+      const res = await fetch('/api/notifications', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: notifTitle,
+          message: notifMessage,
+          category: notifCategory,
+          targetRole: notifRole,
+          targetSport: notifSport !== 'All' ? notifSport : undefined,
+          link: notifLink || undefined,
+        }),
+      });
+      const json = await res.json();
+      if (json.ok) {
+        notify('ok', 'Announcement broadcasted to targeted audience!');
+        setShowSendAnnouncement(false);
+        setNotifTitle('');
+        setNotifMessage('');
+        setNotifLink('');
+        loadAdminData();
+      } else {
+        notify('err', json.error?.message || 'Failed to send announcement.');
+      }
+    } catch {
+      notify('err', 'Network error.');
+    } finally {
+      setSubmittingAction(false);
+    }
+  }
+
+  function resetTournamentForm() {
+    setTName('');
+    setTDesc('');
+    setTVenue('');
+    setTDate('');
+    setTDeadline('');
+    setTMax('32');
+    setTFee('500');
+    setTRules('');
+    setTStatus('Registration Open');
   }
 
   if (isForbidden) {
     return (
       <div className="card max-w-md mx-auto text-center py-12 px-6">
         <div className="w-14 h-14 rounded-2xl bg-rose-50 text-rose-600 border border-rose-200 flex items-center justify-center mx-auto mb-4">
-          <ShieldAlert className="h-7 w-7" />
+          <ShieldCheck className="h-7 w-7" />
         </div>
         <h2 className="text-xl font-bold text-slate-900">Access Restricted</h2>
         <p className="text-xs text-slate-500 mt-2 max-w-xs mx-auto">
@@ -99,41 +332,28 @@ export default function AdminDashboard() {
     );
   }
 
-  const portalCards = [
-    {
-      title: 'Player Arena',
-      desc: 'Ground bookings, tournaments, and equipment catalog',
-      href: '/player',
-      icon: Trophy,
-      color: 'from-amber-500 to-orange-500',
-      badge: 'ATHLETES'
-    },
-    {
-      title: 'Academy Management',
-      desc: 'Venue listings, hourly booking slots, and tournament hosting',
-      href: '/academy',
-      icon: Landmark,
-      color: 'from-emerald-500 to-teal-500',
-      badge: 'GROUNDS'
-    },
-    {
-      title: 'Sports Store Portal',
-      desc: 'Inventory control, product catalog, and order fulfillment',
-      href: '/store',
-      icon: ShoppingBag,
-      color: 'from-sky-500 to-blue-500',
-      badge: 'COMMERCE'
-    },
+  const navItems = [
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'users', label: 'User Management', icon: Users, badge: usersList.length },
+    { id: 'players', label: 'Players', icon: Trophy, badge: analytics?.totals?.players },
+    { id: 'academies', label: 'Academies', icon: Landmark, badge: analytics?.totals?.academies },
+    { id: 'stores', label: 'Stores', icon: ShoppingBag, badge: analytics?.totals?.stores },
+    { id: 'tournaments', label: 'Tournaments', icon: Trophy, badge: tournaments.length },
+    { id: 'matches', label: 'Matches', icon: Calendar },
+    { id: 'notifications', label: 'Notifications', icon: Bell, badge: allNotifications.length },
+    { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+    { id: 'activity', label: 'Activity Logs', icon: History },
+    { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
   return (
-    <div className="space-y-8 relative">
+    <div className="min-h-screen bg-[#0B0F19] text-slate-100 -mt-8 sm:-mt-10 -mx-4 sm:-mx-6 lg:-mx-8 p-4 sm:p-6 lg:p-8">
       {/* Toast Notification */}
       {notification && (
         <div className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-2xl px-5 py-3.5 shadow-2xl border backdrop-blur-md animate-in slide-in-from-bottom duration-200 ${
           notification.type === 'ok' 
-            ? 'bg-emerald-900/90 text-white border-emerald-700/80' 
-            : 'bg-rose-900/90 text-white border-rose-700/80'
+            ? 'bg-emerald-950/90 text-white border-emerald-700/80' 
+            : 'bg-rose-950/90 text-white border-rose-700/80'
         }`}>
           {notification.type === 'ok' ? (
             <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0" />
@@ -150,172 +370,912 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* Admin Hero Header */}
-      <div className="card bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white border-slate-800 p-6 sm:p-8 relative overflow-hidden">
-        <div 
-          aria-hidden 
-          className="absolute -right-16 -top-16 w-64 h-64 rounded-full bg-purple-500/15 blur-3xl pointer-events-none" 
-        />
-
-        <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-6">
-          <div className="flex items-center gap-4">
-            <div className="flex h-14 w-14 sm:h-16 sm:w-16 items-center justify-center rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-500 text-white shadow-lg shadow-purple-500/25">
-              <ShieldCheck className="h-7 w-7" />
-            </div>
-            <div>
-              <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-purple-300 border border-white/10 mb-1">
-                <Sparkles className="h-3 w-3" />
-                Root Authority
-              </div>
-              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-                Admin Master Control
-              </h1>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Ecosystem oversight, partner approvals, and unified portal administration.
-              </p>
-            </div>
+      {/* Top Header Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-6 mb-6 border-b border-slate-800/80 gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-11 h-11 rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-500 flex items-center justify-center text-white shadow-lg shadow-purple-500/20">
+            <ShieldCheck className="h-6 w-6" />
           </div>
-
-          <div className="flex items-center gap-2">
-            <span className="rounded-full bg-purple-500/20 border border-purple-500/30 px-3.5 py-1 text-xs font-extrabold text-purple-300">
-              {requests.length} Pending Verifications
-            </span>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-lg font-black tracking-tight text-white">PlayNex Executive Portal</span>
+              <span className="badge bg-purple-500/20 text-purple-300 border-purple-500/30 text-[10px] font-black uppercase">
+                Root Admin
+              </span>
+            </div>
+            <p className="text-xs text-slate-400 mt-0.5">Unified platform authority: Player, Academy, Store, and Tournament management.</p>
           </div>
+        </div>
+
+        <div className="flex items-center gap-2.5">
+          <button
+            onClick={() => { resetTournamentForm(); setShowCreateTournament(true); }}
+            className="btn btn-sm text-xs bg-brand-600 hover:bg-brand-500 text-white border-0 shadow-md shadow-brand-600/20 flex items-center gap-1.5"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Create Tournament
+          </button>
+          <button
+            onClick={() => setShowSendAnnouncement(true)}
+            className="btn btn-sm text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700 flex items-center gap-1.5"
+          >
+            <Megaphone className="h-3.5 w-3.5 text-amber-400" />
+            Send Announcement
+          </button>
         </div>
       </div>
 
-      {/* Quick Jump Portals */}
-      <div>
-        <h2 className="text-xs font-bold uppercase tracking-wider text-slate-600 mb-4">
-          Direct Portal Access
-        </h2>
-        <div className="grid gap-4 sm:grid-cols-3">
-          {portalCards.map((portal) => {
-            const Icon = portal.icon;
+      {/* Layout: Left Sidebar + Main Content Area */}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+        {/* Modern Left Sidebar */}
+        <aside className="lg:col-span-1 space-y-1 bg-slate-900/60 p-3 rounded-2xl border border-slate-800/80 backdrop-blur-md h-fit">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 px-3 py-2">
+            Control Center
+          </p>
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = activeTab === item.id;
             return (
-              <Link
-                key={portal.href}
-                href={portal.href}
-                className="group card card-hover p-6 border-slate-200 flex flex-col justify-between"
+              <button
+                key={item.id}
+                onClick={() => setActiveTab(item.id as SidebarTab)}
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition ${
+                  isActive 
+                    ? 'bg-purple-600/20 text-purple-300 border border-purple-500/30 shadow-xs' 
+                    : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
+                }`}
               >
-                <div>
-                  <div className="flex items-start justify-between mb-4">
-                    <div className={`w-12 h-12 rounded-2xl bg-gradient-to-tr ${portal.color} text-white flex items-center justify-center shadow-md transition group-hover:scale-105`}>
-                      <Icon className="h-6 w-6" />
-                    </div>
-                    <span className="badge badge-neutral text-[10px] font-extrabold">
-                      {portal.badge}
-                    </span>
+                <div className="flex items-center gap-2.5">
+                  <Icon className={`h-4 w-4 ${isActive ? 'text-purple-400' : 'text-slate-500'}`} />
+                  <span>{item.label}</span>
+                </div>
+                {item.badge !== undefined && item.badge > 0 && (
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${
+                    isActive ? 'bg-purple-500 text-white' : 'bg-slate-800 text-slate-400'
+                  }`}>
+                    {item.badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </aside>
+
+        {/* Content Panel */}
+        <div className="lg:col-span-4 space-y-6">
+          {/* TAB 1: DASHBOARD OVERVIEW */}
+          {activeTab === 'dashboard' && (
+            <div className="space-y-6 animate-in fade-in duration-200">
+              {/* Metric Cards Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                <div className="bg-slate-900/90 border border-slate-800 p-4 rounded-2xl">
+                  <p className="text-[11px] font-medium text-slate-400">Total Users</p>
+                  <p className="text-2xl font-black text-white mt-1">{analytics?.totals?.users || 0}</p>
+                  <span className="text-[10px] text-slate-500">Platform-wide</span>
+                </div>
+                <div className="bg-slate-900/90 border border-slate-800 p-4 rounded-2xl">
+                  <p className="text-[11px] font-medium text-slate-400">Athletes</p>
+                  <p className="text-2xl font-black text-amber-400 mt-1">{analytics?.totals?.players || 0}</p>
+                  <span className="text-[10px] text-slate-500">Active players</span>
+                </div>
+                <div className="bg-slate-900/90 border border-slate-800 p-4 rounded-2xl">
+                  <p className="text-[11px] font-medium text-slate-400">Tournaments</p>
+                  <p className="text-2xl font-black text-purple-400 mt-1">{tournaments.length}</p>
+                  <span className="text-[10px] text-slate-500">Live tournaments</span>
+                </div>
+                <div className="bg-slate-900/90 border border-slate-800 p-4 rounded-2xl">
+                  <p className="text-[11px] font-medium text-slate-400">Registrations</p>
+                  <p className="text-2xl font-black text-emerald-400 mt-1">{analytics?.totals?.registrations || 0}</p>
+                  <span className="text-[10px] text-slate-500">Athlete entries</span>
+                </div>
+                <div className="bg-slate-900/90 border border-slate-800 p-4 rounded-2xl">
+                  <p className="text-[11px] font-medium text-slate-400">Academies</p>
+                  <p className="text-2xl font-black text-teal-400 mt-1">{analytics?.totals?.academies || 0}</p>
+                  <span className="text-[10px] text-slate-500">Sports venues</span>
+                </div>
+                <div className="bg-slate-900/90 border border-slate-800 p-4 rounded-2xl">
+                  <p className="text-[11px] font-medium text-slate-400">Pending Review</p>
+                  <p className="text-2xl font-black text-rose-400 mt-1">{pendingRequests.length}</p>
+                  <span className="text-[10px] text-slate-500">Awaiting approval</span>
+                </div>
+              </div>
+
+              {/* Analytics & Distribution Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Platform Roles Distribution */}
+                <div className="bg-slate-900/90 border border-slate-800 p-5 rounded-2xl">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-sm font-extrabold text-white flex items-center gap-2">
+                      <Users className="h-4 w-4 text-purple-400" />
+                      Platform Portal Distribution
+                    </h3>
+                    <span className="text-xs text-slate-500 font-mono">Live Firestore</span>
                   </div>
 
-                  <h3 className="font-bold text-base text-slate-900 group-hover:text-brand-600 transition">
-                    {portal.title}
+                  <div className="space-y-3">
+                    {[
+                      { label: 'Player Arena (Athletes)', count: analytics?.roles?.player || 0, color: 'bg-amber-500' },
+                      { label: 'Academies & Arenas', count: analytics?.roles?.academy || 0, color: 'bg-teal-500' },
+                      { label: 'Sports Gear Stores', count: analytics?.roles?.store || 0, color: 'bg-sky-500' },
+                      { label: 'System Administrators', count: analytics?.roles?.admin || 0, color: 'bg-purple-500' },
+                    ].map((item) => {
+                      const total = analytics?.totals?.users || 1;
+                      const pct = Math.round((item.count / total) * 100);
+                      return (
+                        <div key={item.label} className="space-y-1">
+                          <div className="flex justify-between text-xs">
+                            <span className="text-slate-300 font-medium">{item.label}</span>
+                            <span className="text-slate-400 font-bold">{item.count} ({pct}%)</span>
+                          </div>
+                          <div className="h-2 w-full rounded-full bg-slate-800 overflow-hidden">
+                            <div className={`h-full rounded-full ${item.color}`} style={{ width: `${Math.max(pct, 4)}%` }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Tournaments by Sport */}
+                <div className="bg-slate-900/90 border border-slate-800 p-5 rounded-2xl">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-sm font-extrabold text-white flex items-center gap-2">
+                      <Trophy className="h-4 w-4 text-amber-400" />
+                      Tournaments by Sport
+                    </h3>
+                    <span className="text-xs text-slate-500 font-mono">{tournaments.length} active</span>
+                  </div>
+
+                  {tournaments.length === 0 ? (
+                    <p className="text-xs text-slate-500 py-6 text-center">No tournaments created yet.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {['Basketball', 'Football', 'Cricket', 'Tennis'].map((sp) => {
+                        const count = tournaments.filter(t => t.sport === sp).length;
+                        const pct = Math.round((count / (tournaments.length || 1)) * 100);
+                        return (
+                          <div key={sp} className="space-y-1">
+                            <div className="flex justify-between text-xs">
+                              <span className="text-slate-300 font-medium">{sp}</span>
+                              <span className="text-slate-400 font-bold">{count} tournaments</span>
+                            </div>
+                            <div className="h-2 w-full rounded-full bg-slate-800 overflow-hidden">
+                              <div className="h-full rounded-full bg-amber-500" style={{ width: `${Math.max(pct, 5)}%` }} />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Pending Verifications Queue */}
+              <div className="bg-slate-900/90 border border-slate-800 p-5 rounded-2xl space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-extrabold text-white flex items-center gap-2">
+                    <Clock className="h-4 w-4 text-rose-400" />
+                    Pending Partner Verifications ({pendingRequests.length})
                   </h3>
-                  <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
-                    {portal.desc}
+                  <span className="text-xs text-slate-500">Requires administrator action</span>
+                </div>
+
+                {pendingRequests.length === 0 ? (
+                  <div className="text-center py-6 text-slate-500 text-xs">
+                    <CheckCircle2 className="h-6 w-6 text-emerald-500 mx-auto mb-1.5" />
+                    All partner accounts are verified and up to date!
+                  </div>
+                ) : (
+                  <div className="divide-y divide-slate-800">
+                    {pendingRequests.map((req) => (
+                      <div key={req.id} className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                            req.type === 'store' ? 'bg-sky-500/20 text-sky-400' : 'bg-teal-500/20 text-teal-400'
+                          }`}>
+                            {req.type === 'store' ? <ShoppingBag className="h-4 w-4" /> : <Landmark className="h-4 w-4" />}
+                          </div>
+                          <div>
+                            <p className="text-xs font-bold text-white">{req.displayName}</p>
+                            <p className="text-[10px] text-slate-400 flex items-center gap-1">
+                              <MapPin className="h-2.5 w-2.5" /> {req.address || 'Address pending'} • Type: {req.type}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 self-end sm:self-center">
+                          <button
+                            onClick={() => handleReviewPartner(req.id, req.type, 'approved')}
+                            className="btn btn-sm btn-emerald text-[11px] py-1 px-3"
+                          >
+                            Approve
+                          </button>
+                          <button
+                            onClick={() => handleReviewPartner(req.id, req.type, 'rejected')}
+                            className="btn btn-sm btn-danger text-[11px] py-1 px-3"
+                          >
+                            Reject
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Recent Activity Logs */}
+              <div className="bg-slate-900/90 border border-slate-800 p-5 rounded-2xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-extrabold text-white flex items-center gap-2">
+                    <History className="h-4 w-4 text-purple-400" />
+                    Live System Activity & Cross-Portal Notifications
+                  </h3>
+                  <span className="text-xs text-slate-500">Audit trail</span>
+                </div>
+
+                <div className="divide-y divide-slate-800 text-xs">
+                  {analytics?.activityLogs?.length === 0 ? (
+                    <p className="py-4 text-center text-slate-500 text-xs">No activity recorded yet.</p>
+                  ) : (
+                    analytics?.activityLogs?.slice(0, 6).map((log: any) => (
+                      <div key={log.id} className="py-2.5 flex items-center justify-between gap-4">
+                        <div>
+                          <p className="text-slate-200 font-medium">{log.details}</p>
+                          <p className="text-[10px] text-slate-500 font-mono mt-0.5">
+                            Action: {log.action} • {log.userName ? `By: ${log.userName}` : 'System'}
+                          </p>
+                        </div>
+                        <span className="text-[10px] text-slate-500 shrink-0">
+                          {log.timestamp ? new Date(log.timestamp).toLocaleTimeString() : ''}
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 2: TOURNAMENTS MANAGEMENT */}
+          {activeTab === 'tournaments' && (
+            <div className="space-y-6 animate-in fade-in duration-200">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-lg font-black text-white">Championship Tournaments ({tournaments.length})</h2>
+                  <p className="text-xs text-slate-400">Published tournaments notify athletes automatically in real time.</p>
+                </div>
+                <button
+                  onClick={() => { resetTournamentForm(); setShowCreateTournament(true); }}
+                  className="btn btn-sm text-xs bg-brand-600 hover:bg-brand-500 text-white border-0 flex items-center gap-1.5"
+                >
+                  <Plus className="h-4 w-4" />
+                  Host New Tournament
+                </button>
+              </div>
+
+              {tournaments.length === 0 ? (
+                <div className="bg-slate-900 border border-slate-800 p-12 text-center rounded-2xl">
+                  <Trophy className="h-10 w-10 text-slate-600 mx-auto mb-2" />
+                  <p className="text-sm font-bold text-slate-400">No tournaments published yet</p>
+                  <p className="text-xs text-slate-600 mt-1">Host your first competitive tournament across PlayNex.</p>
+                  <button
+                    onClick={() => setShowCreateTournament(true)}
+                    className="btn btn-sm btn-emerald text-xs mt-4"
+                  >
+                    Create Tournament
+                  </button>
+                </div>
+              ) : (
+                <div className="bg-slate-900/90 border border-slate-800 rounded-2xl overflow-hidden divide-y divide-slate-800">
+                  {tournaments.map((t) => (
+                    <div key={t.id} className="p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-slate-800/40 transition">
+                      <div className="space-y-1 max-w-xl">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="badge bg-amber-500/20 text-amber-300 border-amber-500/30 text-[10px] font-black uppercase">
+                            {t.sport}
+                          </span>
+                          <span className={`badge text-[10px] font-black uppercase ${
+                            t.status === 'Registration Open' ? 'badge-ok' :
+                            t.status === 'Upcoming' ? 'badge-brand' :
+                            t.status === 'Completed' ? 'badge-neutral' : 'badge-warn'
+                          }`}>
+                            {t.status || 'Active'}
+                          </span>
+                          <span className="text-xs text-slate-400 font-semibold">₹{t.entryFee || t.price || 0} entry</span>
+                        </div>
+
+                        <h3 className="text-base font-extrabold text-white">{t.name}</h3>
+                        <p className="text-xs text-slate-400 flex items-center gap-3">
+                          <span className="flex items-center gap-1">
+                            <MapPin className="h-3 w-3 text-slate-500" /> {t.venue || t.loc}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <Calendar className="h-3 w-3 text-slate-500" /> {t.date}
+                          </span>
+                          <span className="text-purple-400 font-bold">
+                            {t.registeredCount || 0} / {t.maxParticipants || 32} athletes registered
+                          </span>
+                        </p>
+                        {t.rules && (
+                          <p className="text-[11px] text-slate-500 line-clamp-1 mt-1">Rules: {t.rules}</p>
+                        )}
+                      </div>
+
+                      {/* Management Actions - Fully visible Delete button for every status */}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <button
+                          onClick={() => handleViewParticipants(t)}
+                          className="btn btn-sm text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700 flex items-center gap-1"
+                          title="View registered athletes"
+                        >
+                          <Eye className="h-3.5 w-3.5 text-brand-400" />
+                          <span>Participants ({t.registeredCount || 0})</span>
+                        </button>
+
+                        {t.status === 'Draft' && (
+                          <button
+                            onClick={() => handleUpdateTournamentStatus(t.id, 'Registration Open')}
+                            className="btn btn-sm btn-emerald text-xs"
+                          >
+                            Publish
+                          </button>
+                        )}
+
+                        {t.status === 'Registration Open' && (
+                          <button
+                            onClick={() => handleUpdateTournamentStatus(t.id, 'Registration Closed')}
+                            className="btn btn-sm bg-amber-600/30 text-amber-300 border-amber-600/40 text-xs"
+                          >
+                            Close Entry
+                          </button>
+                        )}
+
+                        {t.status !== 'Completed' && t.status !== 'Cancelled' && (
+                          <button
+                            onClick={() => handleUpdateTournamentStatus(t.id, 'Completed')}
+                            className="btn btn-sm text-xs bg-slate-800 text-slate-300 border-slate-700"
+                          >
+                            Mark Completed
+                          </button>
+                        )}
+
+                        {/* Visible Delete Tournament Button */}
+                        <button
+                          onClick={() => setTournamentToDelete(t)}
+                          className="btn btn-sm btn-danger text-xs flex items-center gap-1.5"
+                          title="Delete tournament permanently"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          <span>Delete</span>
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 3: USER MANAGEMENT */}
+          {activeTab === 'users' && (
+            <div className="space-y-4 animate-in fade-in duration-200">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-black text-white">Registered Users ({usersList.length})</h2>
+                  <p className="text-xs text-slate-400">All registered platform users across the 4 core roles.</p>
+                </div>
+              </div>
+
+              <div className="bg-slate-900/90 border border-slate-800 rounded-2xl overflow-hidden divide-y divide-slate-800">
+                {usersList.map((u) => (
+                  <div key={u.id} className="p-4 flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-full bg-purple-500/20 text-purple-300 font-black flex items-center justify-center text-xs">
+                        {u.fullName?.charAt(0) || 'U'}
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold text-white">{u.fullName}</p>
+                        <p className="text-[10px] text-slate-400 font-mono">{u.email}</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {u.roles?.map((r: string) => (
+                        <span key={r} className="badge bg-slate-800 text-slate-300 border-slate-700 text-[10px] uppercase font-bold">
+                          {r}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 4: NOTIFICATIONS & ANNOUNCEMENTS */}
+          {activeTab === 'notifications' && (
+            <div className="space-y-6 animate-in fade-in duration-200">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-black text-white">Platform Announcements ({allNotifications.length})</h2>
+                  <p className="text-xs text-slate-400">Broadcast updates to all players, specific sports, academies, or stores.</p>
+                </div>
+                <button
+                  onClick={() => setShowSendAnnouncement(true)}
+                  className="btn btn-sm text-xs bg-brand-600 hover:bg-brand-500 text-white border-0 flex items-center gap-1.5"
+                >
+                  <Send className="h-3.5 w-3.5" />
+                  Broadcast Alert
+                </button>
+              </div>
+
+              <div className="bg-slate-900/90 border border-slate-800 rounded-2xl divide-y divide-slate-800">
+                {allNotifications.length === 0 ? (
+                  <p className="p-8 text-center text-xs text-slate-500">No announcements broadcasted yet.</p>
+                ) : (
+                  allNotifications.map((n) => (
+                    <div key={n.id} className="p-4 flex items-start justify-between gap-4">
+                      <div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="badge bg-purple-500/20 text-purple-300 border-purple-500/30 text-[10px] uppercase font-black">
+                            Audience: {n.targetRole || 'all'} {n.targetSport ? `(${n.targetSport})` : ''}
+                          </span>
+                          <span className="badge bg-slate-800 text-slate-300 text-[10px]">
+                            {n.category || 'System'}
+                          </span>
+                        </div>
+                        <h4 className="text-xs font-bold text-white">{n.title}</h4>
+                        <p className="text-xs text-slate-400 mt-0.5">{n.message}</p>
+                      </div>
+                      <span className="text-[10px] text-slate-500 shrink-0 font-mono">
+                        {n.createdAt ? new Date(n.createdAt).toLocaleDateString() : ''}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 5: ACTIVITY LOGS */}
+          {activeTab === 'activity' && (
+            <div className="space-y-4 animate-in fade-in duration-200">
+              <div>
+                <h2 className="text-lg font-black text-white">Platform Audit Logs</h2>
+                <p className="text-xs text-slate-400">Immutable audit record of cross-portal notifications and platform operations.</p>
+              </div>
+
+              <div className="bg-slate-900/90 border border-slate-800 rounded-2xl divide-y divide-slate-800">
+                {analytics?.activityLogs?.length === 0 ? (
+                  <p className="p-8 text-center text-xs text-slate-500">No logs found.</p>
+                ) : (
+                  analytics?.activityLogs?.map((log: any) => (
+                    <div key={log.id} className="p-4 flex items-center justify-between gap-4 text-xs">
+                      <div>
+                        <p className="text-slate-200 font-semibold">{log.details}</p>
+                        <p className="text-[10px] text-slate-500 font-mono mt-0.5">
+                          Action: {log.action} • User: {log.userName || log.userId}
+                        </p>
+                      </div>
+                      <span className="text-[10px] text-slate-500 shrink-0 font-mono">
+                        {log.timestamp ? new Date(log.timestamp).toLocaleString() : ''}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* FALLBACK FOR OTHER TABS */}
+          {['players', 'academies', 'stores', 'matches', 'analytics', 'settings'].includes(activeTab) && (
+            <div className="bg-slate-900/90 border border-slate-800 p-8 rounded-2xl text-center space-y-3 animate-in fade-in duration-200">
+              <Sparkles className="h-8 w-8 text-purple-400 mx-auto" />
+              <h3 className="text-base font-bold text-white capitalize">{activeTab} Management View</h3>
+              <p className="text-xs text-slate-400 max-w-md mx-auto">
+                Filter and configure {activeTab} across PlayNex. Live data is synced directly from Firestore.
+              </p>
+              <button 
+                onClick={() => setActiveTab('dashboard')} 
+                className="btn btn-sm btn-secondary text-xs"
+              >
+                Return to Overview
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* CONFIRMATION DIALOG: DELETE TOURNAMENT */}
+      {tournamentToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="card w-full max-w-md bg-slate-900 border-slate-800 text-white p-6 shadow-2xl relative animate-in zoom-in-95 duration-200 overflow-hidden">
+            {/* Warning glow */}
+            <div 
+              aria-hidden 
+              className="absolute -right-12 -top-12 w-44 h-44 rounded-full bg-rose-500/15 blur-2xl pointer-events-none" 
+            />
+
+            <div className="flex items-start justify-between relative z-10 pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-rose-500/20 text-rose-400 flex items-center justify-center border border-rose-500/30">
+                  <AlertTriangle className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-white">Delete Tournament</h3>
+                  <span className="text-[10px] text-rose-400 font-bold uppercase tracking-wider">
+                    Irreversible Action
+                  </span>
+                </div>
+              </div>
+              <button 
+                onClick={() => setTournamentToDelete(null)}
+                disabled={deletingId === tournamentToDelete.id}
+                className="text-slate-400 hover:text-white transition"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-3.5 relative z-10 text-xs">
+              <div className="p-3.5 rounded-xl bg-slate-800/80 border border-slate-700/80 space-y-2">
+                <div>
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 block">
+                    Tournament Name
+                  </span>
+                  <p className="text-sm font-black text-white mt-0.5">
+                    {tournamentToDelete.name}
                   </p>
                 </div>
 
-                <div className="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-brand-600">
-                  <span>Enter Portal</span>
-                  <ArrowUpRight className="h-4 w-4 transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
-                </div>
-              </Link>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Verification Queue */}
-      <section className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center">
-              <Clock className="h-4 w-4" />
-            </div>
-            <h2 className="text-lg font-extrabold text-slate-900">
-              Pending Partner Verifications ({requests.length})
-            </h2>
-          </div>
-          <button 
-            onClick={fetchPending} 
-            className="text-xs font-semibold text-brand-600 hover:underline"
-          >
-            Refresh queue
-          </button>
-        </div>
-
-        {loading ? (
-          <div className="card text-center py-12">
-            <div className="h-8 w-8 animate-spin rounded-full border-2 border-brand-500 border-t-transparent mx-auto" />
-            <p className="text-xs text-slate-500 mt-3">Loading pending partner requests...</p>
-          </div>
-        ) : requests.length === 0 ? (
-          <div className="card text-center py-12">
-            <ShieldCheck className="h-12 w-12 text-emerald-500 mx-auto mb-2" />
-            <h3 className="text-base font-bold text-slate-900">Verification Queue Clear</h3>
-            <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-              All sports stores and academy grounds are up to date. No pending approvals required.
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {requests.map((req) => {
-              const isStore = req.type === 'store';
-              const isBusy = reviewingId === req.id;
-              return (
-                <div 
-                  key={req.id} 
-                  className="card p-5 border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-                >
-                  <div className="flex items-start gap-3.5">
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-                      isStore ? 'bg-sky-50 text-sky-600' : 'bg-emerald-50 text-emerald-600'
+                <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-700/60">
+                  <div>
+                    <span className="text-[10px] font-medium text-slate-400 block">Current Status</span>
+                    <span className={`badge text-[9px] uppercase font-black mt-1 ${
+                      tournamentToDelete.status === 'Registration Open' ? 'badge-ok' :
+                      tournamentToDelete.status === 'Upcoming' ? 'badge-brand' :
+                      tournamentToDelete.status === 'Draft' ? 'badge-neutral' : 'badge-warn'
                     }`}>
-                      {isStore ? <ShoppingBag className="h-5 w-5" /> : <Landmark className="h-5 w-5" />}
-                    </div>
-
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h4 className="font-extrabold text-base text-slate-900">{req.displayName}</h4>
-                        <span className={`badge text-[10px] uppercase font-black ${
-                          isStore ? 'badge-brand' : 'badge-ok'
-                        }`}>
-                          {req.type}
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-400 mt-0.5 font-mono">ID: {req.id}</p>
-                      <p className="text-xs text-slate-500 mt-1 flex items-center gap-1">
-                        <MapPin className="h-3.5 w-3.5 text-slate-400" />
-                        {req.address || 'Address pending update'}
-                      </p>
-                    </div>
+                      {tournamentToDelete.status || 'Active'}
+                    </span>
                   </div>
-
-                  <div className="flex items-center gap-2 self-end sm:self-center">
-                    <button
-                      onClick={() => handleReview(req.id, req.type, 'approved')}
-                      disabled={isBusy}
-                      className="btn btn-sm btn-emerald text-xs"
-                    >
-                      <CheckCircle2 className="h-4 w-4" />
-                      Approve
-                    </button>
-                    <button
-                      onClick={() => handleReview(req.id, req.type, 'rejected')}
-                      disabled={isBusy}
-                      className="btn-danger btn-sm text-xs"
-                    >
-                      <XCircle className="h-4 w-4" />
-                      Reject
-                    </button>
+                  <div>
+                    <span className="text-[10px] font-medium text-slate-400 block">Registered Athletes</span>
+                    <span className="font-black text-purple-300 text-xs mt-1 block">
+                      {tournamentToDelete.registeredCount || 0} participants
+                    </span>
                   </div>
                 </div>
-              );
-            })}
+              </div>
+
+              <div className="rounded-xl border border-rose-500/30 bg-rose-950/30 p-3 text-rose-300 flex items-start gap-2.5">
+                <AlertCircle className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
+                <p className="text-[11px] leading-relaxed">
+                  Warning: Deleting this tournament will permanently erase the event and all associated registration records. Registered players will be automatically notified of the cancellation.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-6 pt-3 border-t border-slate-800 flex items-center justify-end gap-2.5 relative z-10">
+              <button
+                type="button"
+                onClick={() => setTournamentToDelete(null)}
+                disabled={deletingId === tournamentToDelete.id}
+                className="btn btn-secondary text-xs"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                disabled={deletingId === tournamentToDelete.id}
+                className="btn btn-danger text-xs flex items-center gap-1.5"
+              >
+                {deletingId === tournamentToDelete.id ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="h-3.5 w-3.5" />
+                    <span>Confirm Delete</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
-        )}
-      </section>
+        </div>
+      )}
+
+      {/* CREATE TOURNAMENT MODAL */}
+      {showCreateTournament && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="card w-full max-w-2xl bg-slate-900 border-slate-800 text-white p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center">
+                  <Trophy className="h-4 w-4" />
+                </div>
+                <h3 className="text-base font-bold">Host New Championship Tournament</h3>
+              </div>
+              <button onClick={() => setShowCreateTournament(false)} className="text-slate-400 hover:text-white">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateTournament} className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+              <div className="md:col-span-2">
+                <label className="text-slate-300 font-semibold mb-1 block">Tournament Title</label>
+                <input
+                  required
+                  value={tName}
+                  onChange={(e) => setTName(e.target.value)}
+                  className="input bg-slate-800 border-slate-700 text-white"
+                  placeholder="e.g. Visakha Premier Cup 2026"
+                />
+              </div>
+
+              <div>
+                <label className="text-slate-300 font-semibold mb-1 block">Sport Category</label>
+                <select
+                  value={tSport}
+                  onChange={(e) => setTSport(e.target.value)}
+                  className="input bg-slate-800 border-slate-700 text-white"
+                >
+                  <option>Basketball</option>
+                  <option>Football</option>
+                  <option>Cricket</option>
+                  <option>Tennis</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-slate-300 font-semibold mb-1 block">Tournament Category</label>
+                <input
+                  required
+                  value={tCategory}
+                  onChange={(e) => setTCategory(e.target.value)}
+                  className="input bg-slate-800 border-slate-700 text-white"
+                  placeholder="e.g. Open Men's / Under-19"
+                />
+              </div>
+
+              <div>
+                <label className="text-slate-300 font-semibold mb-1 block">Tournament Date</label>
+                <input
+                  type="date"
+                  required
+                  value={tDate}
+                  onChange={(e) => setTDate(e.target.value)}
+                  className="input bg-slate-800 border-slate-700 text-white"
+                />
+              </div>
+
+              <div>
+                <label className="text-slate-300 font-semibold mb-1 block">Registration Deadline</label>
+                <input
+                  type="date"
+                  required
+                  value={tDeadline}
+                  onChange={(e) => setTDeadline(e.target.value)}
+                  className="input bg-slate-800 border-slate-700 text-white"
+                />
+              </div>
+
+              <div>
+                <label className="text-slate-300 font-semibold mb-1 block">Venue / Ground Location</label>
+                <input
+                  required
+                  value={tVenue}
+                  onChange={(e) => setTVenue(e.target.value)}
+                  className="input bg-slate-800 border-slate-700 text-white"
+                  placeholder="e.g. Main Turf Court, Beach Road"
+                />
+              </div>
+
+              <div>
+                <label className="text-slate-300 font-semibold mb-1 block">Max Athlete Capacity</label>
+                <input
+                  type="number"
+                  min="2"
+                  required
+                  value={tMax}
+                  onChange={(e) => setTMax(e.target.value)}
+                  className="input bg-slate-800 border-slate-700 text-white"
+                />
+              </div>
+
+              <div>
+                <label className="text-slate-300 font-semibold mb-1 block">Entry Fee (₹)</label>
+                <input
+                  type="number"
+                  min="0"
+                  required
+                  value={tFee}
+                  onChange={(e) => setTFee(e.target.value)}
+                  className="input bg-slate-800 border-slate-700 text-white"
+                />
+              </div>
+
+              <div>
+                <label className="text-slate-300 font-semibold mb-1 block">Initial Status</label>
+                <select
+                  value={tStatus}
+                  onChange={(e) => setTStatus(e.target.value)}
+                  className="input bg-slate-800 border-slate-700 text-white"
+                >
+                  <option value="Registration Open">Registration Open (Live & Notifies Players)</option>
+                  <option value="Upcoming">Upcoming</option>
+                  <option value="Draft">Draft (Hidden)</option>
+                </select>
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="text-slate-300 font-semibold mb-1 block">Rules & Regulations (Optional)</label>
+                <textarea
+                  rows={2}
+                  value={tRules}
+                  onChange={(e) => setTRules(e.target.value)}
+                  className="input bg-slate-800 border-slate-700 text-white"
+                  placeholder="Standard FIBA rules apply. Knockout tournament format."
+                />
+              </div>
+
+              <div className="md:col-span-2 flex justify-end gap-2 pt-2 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateTournament(false)}
+                  className="btn btn-secondary text-xs"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingAction}
+                  className="btn btn-emerald text-xs"
+                >
+                  {submittingAction ? 'Publishing...' : 'Create Tournament'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* PARTICIPANTS VIEWER MODAL */}
+      {viewingParticipants && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="card w-full max-w-xl bg-slate-900 border-slate-800 text-white p-6 shadow-2xl relative max-h-[85vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div>
+                <h3 className="text-base font-bold text-white">Registered Participants</h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  {viewingParticipants.tournament.name} • {viewingParticipants.list.length} registered
+                </p>
+              </div>
+              <button onClick={() => setViewingParticipants(null)} className="text-slate-400 hover:text-white">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="mt-4 divide-y divide-slate-800 text-xs">
+              {viewingParticipants.list.length === 0 ? (
+                <p className="py-8 text-center text-slate-500">No participants registered yet.</p>
+              ) : (
+                viewingParticipants.list.map((reg, idx) => (
+                  <div key={reg.id} className="py-3 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <span className="w-6 h-6 rounded-full bg-slate-800 text-slate-400 text-[10px] font-mono flex items-center justify-center">
+                        {idx + 1}
+                      </span>
+                      <div>
+                        <p className="font-bold text-white">{reg.userName || 'Athlete'}</p>
+                        <p className="text-[10px] text-slate-400 font-mono">{reg.userEmail}</p>
+                      </div>
+                    </div>
+
+                    <span className="badge badge-ok text-[10px] uppercase font-bold">
+                      {reg.status || 'Confirmed'}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* BROADCAST ANNOUNCEMENT MODAL */}
+      {showSendAnnouncement && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="card w-full max-w-lg bg-slate-900 border-slate-800 text-white p-6 shadow-2xl relative">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <Megaphone className="h-5 w-5 text-amber-400" />
+                <h3 className="text-base font-bold">Broadcast Platform Announcement</h3>
+              </div>
+              <button onClick={() => setShowSendAnnouncement(false)} className="text-slate-400 hover:text-white">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSendAnnouncement} className="mt-4 space-y-4 text-xs">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-slate-300 font-semibold mb-1 block">Target Portal</label>
+                  <select
+                    value={notifRole}
+                    onChange={(e: any) => setNotifRole(e.target.value)}
+                    className="input bg-slate-800 border-slate-700 text-white"
+                  >
+                    <option value="all">All Users (Global)</option>
+                    <option value="player">Players & Athletes Only</option>
+                    <option value="academy">Sports Academies Only</option>
+                    <option value="store">Sports Stores Only</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-slate-300 font-semibold mb-1 block">Sport Filter</label>
+                  <select
+                    value={notifSport}
+                    onChange={(e) => setNotifSport(e.target.value)}
+                    className="input bg-slate-800 border-slate-700 text-white"
+                  >
+                    <option value="All">All Sports</option>
+                    <option value="Basketball">Basketball</option>
+                    <option value="Football">Football</option>
+                    <option value="Cricket">Cricket</option>
+                    <option value="Tennis">Tennis</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-slate-300 font-semibold mb-1 block">Announcement Title</label>
+                <input
+                  required
+                  value={notifTitle}
+                  onChange={(e) => setNotifTitle(e.target.value)}
+                  className="input bg-slate-800 border-slate-700 text-white"
+                  placeholder="e.g. Summer Premier League Registration Now Open"
+                />
+              </div>
+
+              <div>
+                <label className="text-slate-300 font-semibold mb-1 block">Message Content</label>
+                <textarea
+                  required
+                  rows={3}
+                  value={notifMessage}
+                  onChange={(e) => setNotifMessage(e.target.value)}
+                  className="input bg-slate-800 border-slate-700 text-white"
+                  placeholder="Detailed announcement message broadcasted to user dashboards..."
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowSendAnnouncement(false)}
+                  className="btn btn-secondary text-xs"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingAction}
+                  className="btn btn-emerald text-xs flex items-center gap-1.5"
+                >
+                  <Send className="h-3 w-3" />
+                  {submittingAction ? 'Broadcasting...' : 'Send Announcement'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

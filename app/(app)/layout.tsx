@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { verifySession, clearSessionCookie } from '@/lib/auth/session';
 import { adminDb } from '@/lib/firebase/admin';
 import Navbar from '@/components/Navbar';
+import WelcomeNotificationModal from '@/components/WelcomeNotificationModal';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,6 +33,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         userEmail={session.email} 
         signOutAction={handleSignOut} 
       />
+
+      <WelcomeNotificationModal />
 
       <main className="flex-1 mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8 py-8 sm:py-10">
         {children}

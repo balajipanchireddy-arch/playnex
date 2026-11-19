@@ -1,0 +1,134 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function getUserRole(role) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/userRoles/$(request.auth.uid + '_' + role)) &&
+        get(/databases/$(database)/documents/userRoles/$(request.auth.uid + '_' + role)).data.status == 'active';
+    }
+
+    function isAdmin() {
+      return getUserRole('admin');
+    }
+
+    function isAcademy() {
+      return getUserRole('academy') || isAdmin();
+    }
+
+    function isStore() {
+      return getUserRole('store') || isAdmin();
+    }
+
+    // 1. Users collection
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isOwner(userId) || isAdmin();
+    }
+
+    // 2. User Roles (Users cannot elevate their own role to Admin)
+    match /userRoles/{roleDocId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // 3. Player Profiles
+    match /playerProfiles/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isOwner(userId) || isAdmin();
+    }
+
+    // 4. Academies collection
+    match /academies/{academyId} {
+      allow read: if isAuthenticated();
+      allow write: if (isAuthenticated() && resource.data.ownerUserId == request.auth.uid) || isAdmin();
+      allow create: if isAuthenticated();
+    }
+
+    // 5. Stores collection
+    match /stores/{storeId} {
+      allow read: if isAuthenticated();
+      allow write: if (isAuthenticated() && resource.data.ownerUserId == request.auth.uid) || isAdmin();
+      allow create: if isAuthenticated();
+    }
+
+    // 6. Facilities / Grounds collection
+    match /facilities/{facilityId} {
+      allow read: if isAuthenticated();
+      allow create: if isAcademy();
+      allow update, delete: if isAcademy() || isAdmin();
+    }
+
+    // 7. Events / Tournaments collection
+    // Published tournaments can be read by all authenticated players in real-time
+    match /events/{eventId} {
+      allow read: if isAuthenticated();
+      allow create: if isAcademy() || isAdmin();
+      allow update, delete: if isAdmin() || (isAcademy() && resource.data.academyId == request.auth.uid);
+    }
+
+    // 8. Tournament Registrations
+    match /registrations/{registrationId} {
+      allow read: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid || 
+        isAdmin() || 
+        isAcademy()
+      );
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    // 9. Bookings collection
+    match /bookings/{bookingId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAcademy() || isAdmin());
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    // 10. Products collection
+    match /products/{productId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isStore() || isAdmin();
+    }
+
+    // 11. Orders collection
+    match /orders/{orderId} {
+      allow read: if isAuthenticated() && (resource.data.playerId == request.auth.uid || isStore() || isAdmin());
+      allow create: if isAuthenticated() && request.resource.data.playerId == request.auth.uid;
+      allow update: if isStore() || isAdmin();
+    }
+
+    // 12. Ratings collection
+    match /ratings/{ratingId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow delete: if isAdmin();
+    }
+
+    // 13. Notifications collection
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // 14. Notification Reads tracking
+    match /notificationReads/{readDocId} {
+      allow read, write: if isAuthenticated() && readDocId.matches('.*_' + request.auth.uid);
+    }
+
+    // 15. Activity Logs collection
+    match /activityLogs/{logId} {
+      allow read: if isAdmin();
+      allow write: if isAuthenticated();
+    }
+  }
+}

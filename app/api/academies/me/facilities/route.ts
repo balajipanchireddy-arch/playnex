@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { adminDb } from '@/lib/firebase/admin';
 import { verifySession } from '@/lib/auth/session';
 import { ok, fail } from '@/lib/api/response';
+import { dispatchNotification } from '@/lib/notifications/dispatch';
+import { logActivity } from '@/lib/firebase/activity';
 
 const Body = z.object({
   name: z.string().min(2),
@@ -51,7 +53,7 @@ export async function POST(req: NextRequest) {
     const academyName = academyDoc.exists ? academyDoc.data()?.academyName : 'Sports Academy';
     const academyVerification = academyDoc.exists ? academyDoc.data()?.verificationStatus : 'pending';
 
-    await adminDb.collection('facilities').add({
+    const docRef = await adminDb.collection('facilities').add({
       academyId: session.uid,
       academyName,
       academyVerification,
@@ -66,7 +68,30 @@ export async function POST(req: NextRequest) {
       closed: false,
       createdAt: Date.now()
     });
-    return ok({ success: true });
+
+    await logActivity({
+      userId: session.uid,
+      userName: academyName,
+      action: 'facility_created',
+      entityType: 'booking',
+      entityId: docRef.id,
+      details: `${academyName} added venue "${name}" (${sport}) at ₹${price}/hr`,
+    });
+
+    // AUTOMATIC ACADEMY-TO-PLAYER NOTIFICATION:
+    // Inform athletes interested in this sport about the new venue
+    await dispatchNotification({
+      title: `🏟️ New Turf Arena: ${name}`,
+      message: `${academyName} opened ${name} for ${sport} bookings at ${address}. Hourly rate: ₹${price}/hr.`,
+      category: 'academy',
+      targetRole: 'player',
+      targetSport: sport,
+      link: '/player',
+      senderName: academyName,
+      idempotencyKey: `notif_facility_added_${docRef.id}`,
+    });
+
+    return ok({ success: true, id: docRef.id });
   } catch (e: any) { return fail('server_error', e.message, 500); }
 }
 
@@ -107,7 +132,7 @@ export async function DELETE(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const facilityId = searchParams.get('facilityId');
-    if (!facilityId) return fail('invalid', 'Missing facilityId', 400);
+    if (!productId(facilityId)) return fail('invalid', 'Missing facilityId', 400);
 
     const facRef = adminDb.collection('facilities').doc(facilityId);
     const facSnap = await facRef.get();
@@ -118,3 +143,5 @@ export async function DELETE(req: NextRequest) {
     return ok({ success: true });
   } catch (e: any) { return fail('server_error', e.message, 500); }
 }
+
+function productId(val: any) { return !!val; }

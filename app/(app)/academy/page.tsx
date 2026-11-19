@@ -18,7 +18,8 @@ import {
   X,
   Sparkles,
   DollarSign,
-  ChevronDown
+  ChevronDown,
+  Users
 } from 'lucide-react';
 
 export default function AcademyDashboard() {
@@ -40,9 +41,13 @@ export default function AcademyDashboard() {
   // Tournament Form State
   const [tName, setTName] = useState('');
   const [tSport, setTSport] = useState('Basketball');
+  const [tCategory, setTCategory] = useState('Open Championship');
   const [tDate, setTDate] = useState('');
+  const [tDeadline, setTDeadline] = useState('');
   const [tLoc, setTLoc] = useState('');
-  const [tPrice, setTPrice] = useState('');
+  const [tPrice, setTPrice] = useState('500');
+  const [tMax, setTMax] = useState('32');
+  const [tRules, setTRules] = useState('');
   const [submittingTournament, setSubmittingTournament] = useState(false);
   const [showAddTournament, setShowAddTournament] = useState(false);
 
@@ -61,8 +66,8 @@ export default function AcademyDashboard() {
         fetch('/api/academies/me/events').then(r => r.json())
       ]);
       if (acadRes.ok) setAcademy(acadRes.data);
-      if (facRes.ok) setFacilities(facRes.data);
-      if (tourRes.ok) setTournaments(tourRes.data);
+      if (facRes.ok) setFacilities(facRes.data || []);
+      if (tourRes.ok) setTournaments(tourRes.data || []);
     } catch {
       notify('err', 'Could not load academy data.');
     } finally { 
@@ -113,15 +118,31 @@ export default function AcademyDashboard() {
       const res = await fetch('/api/academies/me/events', {
         method: 'POST', 
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: tName, sport: tSport, date: tDate, loc: tLoc, price: Number(tPrice) })
+        body: JSON.stringify({ 
+          name: tName, 
+          sport: tSport, 
+          category: tCategory,
+          date: tDate, 
+          registrationDeadline: tDeadline || tDate,
+          venue: tLoc,
+          loc: tLoc, 
+          price: Number(tPrice),
+          entryFee: Number(tPrice),
+          maxParticipants: Number(tMax),
+          rules: tRules,
+          status: 'Registration Open',
+        })
       });
       const data = await res.json();
       if (data.ok) {
-        notify('ok', `Tournament "${tName}" published!`);
+        notify('ok', `Tournament "${tName}" published! Athletes can now view and register.`);
         setTName(''); 
         setTDate(''); 
+        setTDeadline('');
         setTLoc(''); 
-        setTPrice(''); 
+        setTPrice('500'); 
+        setTMax('32');
+        setTRules('');
         setShowAddTournament(false);
         loadData();
       } else {
@@ -423,7 +444,7 @@ export default function AcademyDashboard() {
               />
             </div>
             <div>
-              <label className="label">Sport</label>
+              <label className="label">Sport Category</label>
               <select 
                 value={tSport} 
                 onChange={e => setTSport(e.target.value)} 
@@ -436,6 +457,16 @@ export default function AcademyDashboard() {
               </select>
             </div>
             <div>
+              <label className="label">Category</label>
+              <input 
+                required 
+                value={tCategory} 
+                onChange={e => setTCategory(e.target.value)} 
+                className="input" 
+                placeholder="e.g. Open Men's" 
+              />
+            </div>
+            <div>
               <label className="label">Tournament Date</label>
               <input 
                 type="date" 
@@ -446,13 +477,34 @@ export default function AcademyDashboard() {
               />
             </div>
             <div>
-              <label className="label">Location / Ground Name</label>
+              <label className="label">Registration Deadline</label>
+              <input 
+                type="date" 
+                required 
+                value={tDeadline} 
+                onChange={e => setTDeadline(e.target.value)} 
+                className="input" 
+              />
+            </div>
+            <div>
+              <label className="label">Venue / Ground Name</label>
               <input 
                 required 
                 value={tLoc} 
                 onChange={e => setTLoc(e.target.value)} 
                 className="input" 
-                placeholder="Main Arena" 
+                placeholder="Main Arena Court 1" 
+              />
+            </div>
+            <div>
+              <label className="label">Max Athlete Capacity</label>
+              <input 
+                type="number" 
+                min="2"
+                required 
+                value={tMax} 
+                onChange={e => setTMax(e.target.value)} 
+                className="input" 
               />
             </div>
             <div>
@@ -465,6 +517,16 @@ export default function AcademyDashboard() {
                 onChange={e => setTPrice(e.target.value)} 
                 className="input" 
                 placeholder="e.g. 500" 
+              />
+            </div>
+            <div className="md:col-span-3">
+              <label className="label">Tournament Rules & Guidelines</label>
+              <textarea 
+                rows={2}
+                value={tRules} 
+                onChange={e => setTRules(e.target.value)} 
+                className="input" 
+                placeholder="Match guidelines, scoring format, requirements..." 
               />
             </div>
             <div className="md:col-span-3 flex justify-end gap-2 mt-2">
@@ -687,25 +749,29 @@ export default function AcademyDashboard() {
                       <h4 className="font-bold text-base text-slate-900">{t.name}</h4>
                     </div>
                     <span className="badge badge-warn text-xs font-black">
-                      ₹{t.price}
+                      ₹{t.entryFee || t.price || 0}
                     </span>
                   </div>
 
-                  <div className="mt-4 space-y-1 text-xs text-slate-500">
+                  <div className="mt-4 space-y-1.5 text-xs text-slate-500">
                     <p className="flex items-center gap-1.5">
                       <MapPin className="h-3.5 w-3.5 text-slate-400" />
-                      <span>{t.loc}</span>
+                      <span>{t.venue || t.loc}</span>
                     </p>
                     <p className="flex items-center gap-1.5">
                       <Calendar className="h-3.5 w-3.5 text-slate-400" />
                       <span>{t.date ? new Date(t.date).toDateString() : 'Date TBA'}</span>
                     </p>
+                    <p className="flex items-center gap-1.5 text-purple-700 font-bold">
+                      <Users className="h-3.5 w-3.5 text-purple-500" />
+                      <span>{t.registeredCount || 0} / {t.maxParticipants || 32} athletes</span>
+                    </p>
                   </div>
                 </div>
 
                 <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-400">
-                  <span>Status: Open for Entries</span>
-                  <span className="font-bold text-amber-600">Active</span>
+                  <span>Status: {t.status || 'Active'}</span>
+                  <span className="font-bold text-emerald-600">Published</span>
                 </div>
               </div>
             ))}
