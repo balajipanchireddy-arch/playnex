@@ -27,6 +27,7 @@ export default function AcademyDashboard() {
   const [academy, setAcademy] = useState<any>(null);
   const [facilities, setFacilities] = useState<any[]>([]);
   const [tournaments, setTournaments] = useState<any[]>([]);
+  const [games, setGames] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [notification, setNotification] = useState<
     { type: 'ok' | 'err'; text: string } | null
@@ -89,14 +90,21 @@ export default function AcademyDashboard() {
 
   async function loadData() {
     try {
-      const [acadRes, facRes, tourRes] = await Promise.all([
+      const [acadRes, facRes, tourRes, gamesRes] = await Promise.all([
         fetch('/api/academies/me').then((r) => r.json()),
         fetch('/api/academies/me/facilities').then((r) => r.json()),
         fetch('/api/academies/me/events').then((r) => r.json()),
+        fetch('/api/games').then((r) => r.json()),
       ]);
       if (acadRes.ok) setAcademy(acadRes.data);
       if (facRes.ok) setFacilities(facRes.data || []);
       if (tourRes.ok) setTournaments(tourRes.data || []);
+      if (gamesRes.ok) {
+        setGames(gamesRes.data || []);
+        if (gamesRes.data?.[0]?.name) {
+          setTSport(gamesRes.data[0].name);
+        }
+      }
     } catch (e) {
       notify('err', 'Could not load academy data.');
     } finally {
@@ -303,23 +311,22 @@ export default function AcademyDashboard() {
       )}
 
       {/* Hero Overview Header */}
-      <div className="card bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white border-slate-800 p-6 sm:p-8 relative overflow-hidden">
-        <div aria-hidden className="absolute -right-16 -top-16 w-64 h-64 rounded-full bg-teal-500/15 blur-3xl pointer-events-none" />
+      <div className="card bg-white text-[#172033] border-[#E2E8F0] p-6 sm:p-8 relative overflow-hidden shadow-sm">
         <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-6">
           <div className="flex items-center gap-4">
-            <div className="flex h-14 w-14 sm:h-16 sm:w-16 items-center justify-center rounded-2xl bg-gradient-to-tr from-teal-500 to-emerald-400 text-white shadow-lg shadow-teal-500/25">
+            <div className="flex h-14 w-14 sm:h-16 sm:w-16 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
               <Landmark className="h-7 w-7" />
             </div>
             <div>
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Sports Venue Partner</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#64748B]">Sports Venue Partner</span>
                 <span
-                  className={`badge text-[10px] font-black uppercase ${
+                  className={`badge text-[10px] font-bold uppercase ${
                     academy?.verificationStatus === 'approved'
-                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                       : academy?.verificationStatus === 'rejected'
-                      ? 'bg-rose-500/20 text-rose-300 border-rose-500/30'
-                      : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                      ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                      : 'bg-amber-50 text-amber-700 border border-amber-200'
                   }`}
                 >
                   {academy?.verificationStatus === 'approved'
@@ -329,10 +336,10 @@ export default function AcademyDashboard() {
                     : 'Verification Pending'}
                 </span>
               </div>
-              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
+              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[#172033]">
                 {academy?.academyName || 'Academy & Arena Control'}
               </h1>
-              <p className="text-xs text-slate-400 mt-0.5">
+              <p className="text-xs text-[#64748B] mt-0.5">
                 {academy?.address || 'Manage turf reservations, live booking slots, and competitive tournaments.'}
               </p>
             </div>
@@ -359,18 +366,18 @@ export default function AcademyDashboard() {
           </div>
         </div>
         {/* KPI Strip */}
-        <div className="mt-6 pt-6 border-t border-slate-800/80 grid grid-cols-3 gap-4 text-xs">
+        <div className="mt-6 pt-6 border-t border-[#E2E8F0] grid grid-cols-3 gap-4 text-xs">
           <div>
-            <p className="text-slate-400 font-medium">Grounds Listed</p>
-            <p className="text-xl font-bold text-white mt-0.5">{facilities.length}</p>
+            <p className="text-[#64748B] font-medium">Grounds Listed</p>
+            <p className="text-xl font-bold text-[#172033] mt-0.5">{facilities.length}</p>
           </div>
           <div>
-            <p className="text-slate-400 font-medium">Hourly Slots Active</p>
-            <p className="text-xl font-bold text-teal-400 mt-0.5">{totalSlotsCount}</p>
+            <p className="text-[#64748B] font-medium">Hourly Slots Active</p>
+            <p className="text-xl font-bold text-teal-700 mt-0.5">{totalSlotsCount}</p>
           </div>
           <div>
-            <p className="text-slate-400 font-medium">Hosted Tournaments</p>
-            <p className="text-xl font-bold text-amber-400 mt-0.5">{tournaments.length}</p>
+            <p className="text-[#64748B] font-medium">Hosted Tournaments</p>
+            <p className="text-xl font-bold text-amber-700 mt-0.5">{tournaments.length}</p>
           </div>
         </div>
       </div>
@@ -511,16 +518,27 @@ export default function AcademyDashboard() {
               />
             </div>
             <div>
-              <label className="label">Sport Category</label>
+              <label className="label">Sport / Game *</label>
               <select
                 value={tSport}
                 onChange={(e) => setTSport(e.target.value)}
                 className="input"
               >
-                <option>Basketball</option>
-                <option>Football</option>
-                <option>Cricket</option>
-                <option>Tennis</option>
+                {games.length > 0 ? (
+                  games.map((g) => (
+                    <option key={g.id} value={g.name}>
+                      {g.name} ({g.category})
+                    </option>
+                  ))
+                ) : (
+                  <>
+                    <option>Badminton</option>
+                    <option>Football</option>
+                    <option>Cricket</option>
+                    <option>Basketball</option>
+                    <option>Tennis</option>
+                  </>
+                )}
               </select>
             </div>
             <div>

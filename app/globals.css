@@ -4,49 +4,50 @@
 
 @layer base {
   :root {
-    --color-bg: #f8fafc;
-    --color-surface: #ffffff;
-    --color-border: #e2e8f0;
+    --color-bg: #F5F7FA;
+    --color-card: #FFFFFF;
+    --color-border: #E2E8F0;
+    --color-text-primary: #172033;
+    --color-text-secondary: #64748B;
+    --color-primary: #2563EB;
+    --color-primary-hover: #1D4ED8;
+    --color-secondary-accent: #DBEAFE;
   }
 
   * {
-    border-color: #e2e8f0;
+    border-color: #E2E8F0;
   }
 
   body {
-    @apply bg-slate-50 text-slate-900 antialiased min-h-screen selection:bg-brand-500 selection:text-white;
-    background-image: 
-      radial-gradient(at 100% 0%, rgba(14, 165, 233, 0.08) 0px, transparent 50%),
-      radial-gradient(at 0% 20%, rgba(16, 185, 129, 0.06) 0px, transparent 40%),
-      radial-gradient(at 50% 100%, rgba(99, 102, 241, 0.05) 0px, transparent 60%);
-    background-attachment: fixed;
+    @apply bg-[#F5F7FA] text-[#172033] antialiased min-h-screen selection:bg-[#2563EB] selection:text-white font-sans;
+    background-color: #F5F7FA;
   }
 
   :focus-visible {
-    @apply outline-none ring-2 ring-brand-500 ring-offset-2 ring-offset-white;
+    @apply outline-none ring-2 ring-[#2563EB] ring-offset-2 ring-offset-white;
   }
 }
 
 @layer components {
   /* Buttons */
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 font-semibold text-white bg-gradient-to-r from-brand-600 via-brand-500 to-sky-600 shadow-sm shadow-brand-500/25 transition-all duration-200 hover:shadow-md hover:shadow-brand-500/35 hover:brightness-105 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none;
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 font-semibold text-white bg-[#2563EB] hover:bg-[#1D4ED8] shadow-sm transition-all duration-150 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none;
   }
 
   .btn-secondary {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 font-semibold text-slate-700 bg-white border border-slate-200 shadow-sm transition-all duration-200 hover:bg-slate-50 hover:text-slate-900 hover:border-slate-300 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none;
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 font-semibold text-[#172033] bg-white hover:bg-slate-50 border border-[#E2E8F0] shadow-xs transition-all duration-150 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none;
   }
 
   .btn-ghost {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100/80 transition-colors duration-150 disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 font-medium text-[#64748B] hover:text-[#172033] hover:bg-slate-100 transition-colors duration-150 disabled:opacity-50;
   }
 
   .btn-danger {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 font-semibold text-red-600 bg-red-50 border border-red-200/80 hover:bg-red-100 hover:border-red-300 transition-colors duration-150 disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 font-semibold text-rose-700 bg-rose-50 border border-rose-200 hover:bg-rose-100 transition-colors duration-150 disabled:opacity-50;
   }
 
   .btn-emerald {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 font-semibold text-white bg-gradient-to-r from-emerald-600 to-teal-600 shadow-sm shadow-emerald-500/25 transition-all duration-200 hover:shadow-md hover:shadow-emerald-500/35 hover:brightness-105 active:scale-[0.98];
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 font-semibold text-white bg-emerald-600 hover:bg-emerald-700 shadow-sm transition-all duration-150 active:scale-[0.98];
   }
 
   .btn-sm {
@@ -59,20 +60,20 @@
 
   /* Form Elements */
   .input {
-    @apply w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 font-medium placeholder:text-slate-400 shadow-sm transition-all duration-200 focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10 focus:outline-none disabled:bg-slate-50 disabled:text-slate-500;
+    @apply w-full rounded-xl border border-[#E2E8F0] bg-white px-3.5 py-2.5 text-sm text-[#172033] font-medium placeholder:text-[#64748B] shadow-xs transition-all duration-150 focus:border-[#2563EB] focus:ring-4 focus:ring-blue-500/10 focus:outline-none disabled:bg-slate-50 disabled:text-slate-400;
   }
 
   .label {
-    @apply block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5;
+    @apply block text-xs font-semibold uppercase tracking-wider text-[#64748B] mb-1.5;
   }
 
   /* Cards */
   .card {
-    @apply bg-white/90 backdrop-blur-sm rounded-2xl border border-slate-200/80 p-6 shadow-card transition-all duration-200;
+    @apply bg-white rounded-2xl border border-[#E2E8F0] p-6 shadow-sm transition-all duration-150 text-[#172033];
   }
 
   .card-hover {
-    @apply hover:shadow-card-hover hover:border-slate-300 hover:-translate-y-0.5;
+    @apply hover:shadow-md hover:border-slate-300 transition-shadow;
   }
 
   .card-interactive {
@@ -81,27 +82,27 @@
 
   /* Badges */
   .badge {
-    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-bold whitespace-nowrap;
+    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold whitespace-nowrap;
   }
 
   .badge-ok {
-    @apply bg-emerald-50 text-emerald-700 border border-emerald-200/60;
+    @apply bg-emerald-50 text-emerald-700 border border-emerald-200;
   }
 
   .badge-warn {
-    @apply bg-amber-50 text-amber-700 border border-amber-200/60;
+    @apply bg-amber-50 text-amber-700 border border-amber-200;
   }
 
   .badge-bad {
-    @apply bg-rose-50 text-rose-700 border border-rose-200/60;
+    @apply bg-rose-50 text-rose-700 border border-rose-200;
   }
 
   .badge-brand {
-    @apply bg-sky-50 text-sky-700 border border-sky-200/60;
+    @apply bg-[#DBEAFE] text-[#1E40AF] border border-blue-200;
   }
 
   .badge-neutral {
-    @apply bg-slate-100 text-slate-700 border border-slate-200/60;
+    @apply bg-slate-100 text-slate-700 border border-slate-200;
   }
 }
 
@@ -111,12 +112,12 @@
   height: 8px;
 }
 ::-webkit-scrollbar-track {
-  background: transparent;
+  background: #F5F7FA;
 }
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: #CBD5E1;
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: #94A3B8;
 }

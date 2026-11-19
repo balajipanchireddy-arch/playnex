@@ -3,6 +3,7 @@ import { verifySession, clearSessionCookie } from '@/lib/auth/session';
 import { adminDb } from '@/lib/firebase/admin';
 import Navbar from '@/components/Navbar';
 import WelcomeNotificationModal from '@/components/WelcomeNotificationModal';
+import PlayNexAI from '@/components/PlayNexAI';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,7 +27,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50/60">
+    <div className="min-h-screen flex flex-col bg-[#F5F7FA] text-[#172033]">
       <Navbar 
         roles={roles} 
         isAdmin={isAdmin} 
@@ -40,10 +41,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         {children}
       </main>
 
-      <footer className="border-t border-slate-200/80 bg-white/60 py-6 text-center text-xs text-slate-500">
+      {/* Floating PlayNex AI Assistant */}
+      <PlayNexAI />
+
+      <footer className="border-t border-[#E2E8F0] bg-white py-6 text-center text-xs text-[#64748B]">
         <div className="mx-auto max-w-7xl px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
-          <p>© {new Date().getFullYear()} PlayNex. The Connected Sports Ecosystem.</p>
-          <p className="text-slate-400">Play harder. Manage smarter. Grow faster.</p>
+          <p>© {new Date().getFullYear()} PlayNex. The Connected Sports & Gaming Ecosystem.</p>
+          <p className="text-[#64748B]">Play harder. Manage smarter. Grow faster.</p>
         </div>
       </footer>
     </div>

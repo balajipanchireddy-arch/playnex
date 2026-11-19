@@ -1,13 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { 
-  Sparkles, 
-  Trophy, 
-  Megaphone, 
-  X, 
-  ArrowRight, 
-  CheckCheck,
+import {
+  Sparkles,
+  X,
   CheckCircle2,
   Calendar
 } from 'lucide-react';
@@ -18,7 +14,6 @@ export default function WelcomeNotificationModal() {
 
   useEffect(() => {
     async function checkUnread() {
-      // Check if user already saw popup in this session
       const hasSeenSession = sessionStorage.getItem('playnex_welcome_notif_seen');
       if (hasSeenSession) return;
 
@@ -55,25 +50,19 @@ export default function WelcomeNotificationModal() {
   if (!show || !unreadNotif) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="card w-full max-w-md border-slate-200/90 bg-white p-6 shadow-2xl relative animate-in zoom-in-95 duration-200 overflow-hidden">
-        {/* Glow Accent */}
-        <div 
-          aria-hidden 
-          className="absolute -right-12 -top-12 w-44 h-44 rounded-full bg-brand-500/15 blur-2xl pointer-events-none" 
-        />
-
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-150">
+      <div className="card w-full max-w-md border-[#E2E8F0] bg-white p-6 shadow-xl relative animate-in zoom-in-95 duration-150 overflow-hidden text-[#172033]">
         <div className="flex items-start justify-between relative z-10">
           <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-brand-600 to-teal-500 text-white flex items-center justify-center shadow-md shadow-brand-500/25">
+            <div className="w-10 h-10 rounded-2xl bg-[#DBEAFE] text-[#2563EB] flex items-center justify-center">
               <Sparkles className="h-5 w-5" />
             </div>
             <div>
-              <span className="text-[10px] font-bold uppercase tracking-wider text-brand-600 flex items-center gap-1">
-                <span className="h-1.5 w-1.5 rounded-full bg-brand-500 animate-ping" />
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[#2563EB] flex items-center gap-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-[#2563EB]" />
                 Latest PlayNex Alert
               </span>
-              <h3 className="text-base font-extrabold text-slate-900 leading-tight">
+              <h3 className="text-base font-extrabold text-[#172033] leading-tight">
                 Welcome Back!
               </h3>
             </div>
@@ -81,27 +70,27 @@ export default function WelcomeNotificationModal() {
 
           <button
             onClick={() => handleDismiss(false)}
-            className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition"
+            className="rounded-xl p-1.5 text-[#64748B] hover:bg-slate-100 hover:text-[#172033] transition"
           >
             <X className="h-4 w-4" />
           </button>
         </div>
 
-        <div className="mt-4 p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-2 relative z-10">
+        <div className="mt-4 p-4 rounded-2xl bg-slate-50 border border-[#E2E8F0] space-y-2 relative z-10">
           <div className="flex items-center justify-between">
-            <span className="badge badge-brand text-[10px] uppercase font-black">
+            <span className="badge badge-brand text-[10px] uppercase font-bold">
               {unreadNotif.category || 'Announcement'}
             </span>
-            <span className="text-[10px] font-medium text-slate-400 flex items-center gap-1">
+            <span className="text-[10px] font-medium text-[#64748B] flex items-center gap-1">
               <Calendar className="h-3 w-3" />
               {unreadNotif.createdAt ? new Date(unreadNotif.createdAt).toLocaleDateString() : 'Today'}
             </span>
           </div>
 
-          <h4 className="text-sm font-bold text-slate-900">
+          <h4 className="text-sm font-bold text-[#172033]">
             {unreadNotif.title}
           </h4>
-          <p className="text-xs text-slate-600 leading-relaxed">
+          <p className="text-xs text-[#64748B] leading-relaxed">
             {unreadNotif.message}
           </p>
         </div>
@@ -125,4 +114,3 @@ export default function WelcomeNotificationModal() {
     </div>
   );
 }
-

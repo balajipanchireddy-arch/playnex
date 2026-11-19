@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">PlayNex</string>
+    <string name="error_offline_title">You are offline</string>
+    <string name="error_offline_msg">Please check your internet connection and tap retry.</string>
+    <string name="retry">Retry</string>
+</resources>
+

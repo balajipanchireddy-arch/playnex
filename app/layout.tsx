@@ -1,13 +1,5 @@
-
 import type { Metadata, Viewport } from 'next';
-import { Inter } from 'next/font/google';
 import './globals.css';
-
-const inter = Inter({
-  subsets: ['latin'],
-  variable: '--font-inter',
-  display: 'swap',
-});
 
 export const metadata: Metadata = {
   title: {
@@ -20,12 +12,12 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     title: 'PlayNex',
-    statusBarStyle: 'black-translucent',
+    statusBarStyle: 'default',
   },
 };
 
 export const viewport: Viewport = {
-  themeColor: '#6D28D9',
+  themeColor: '#2563EB',
   width: 'device-width',
   initialScale: 1,
   maximumScale: 5,
@@ -37,8 +29,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={inter.variable}>
-      <body className="min-h-screen bg-slate-50 text-slate-900 font-sans antialiased">
+    <html lang="en">
+      <body className="min-h-screen bg-[#F5F7FA] text-[#172033] font-sans antialiased selection:bg-[#2563EB] selection:text-white">
         {children}
       </body>
     </html>

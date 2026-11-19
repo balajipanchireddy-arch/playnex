@@ -1,17 +1,17 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { 
-  ShoppingBag, 
-  Package, 
-  CheckCircle2, 
-  AlertTriangle, 
-  AlertCircle, 
-  Plus, 
-  Trash2, 
-  Truck, 
-  Clock, 
-  ShieldCheck, 
+import {
+  ShoppingBag,
+  Package,
+  CheckCircle2,
+  AlertTriangle,
+  AlertCircle,
+  Plus,
+  Trash2,
+  Truck,
+  Clock,
+  ShieldCheck,
   X,
   Search,
   Check,
@@ -23,9 +23,10 @@ export default function StoreDashboard() {
   const [store, setStore] = useState<any>(null);
   const [products, setProducts] = useState<any[]>([]);
   const [orders, setOrders] = useState<any[]>([]);
+  const [games, setGames] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [notification, setNotification] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
-  
+
   // Product Form State
   const [name, setName] = useState('');
   const [sport, setSport] = useState('Basketball');
@@ -44,23 +45,25 @@ export default function StoreDashboard() {
 
   async function loadData() {
     try {
-      const [storeData, prodData, orderData] = await Promise.all([
+      const [storeData, prodData, orderData, gamesData] = await Promise.all([
         fetch('/api/stores/me').then(r => r.json()),
         fetch('/api/stores/me/products').then(r => r.json()),
-        fetch('/api/stores/me/orders').then(r => r.json())
+        fetch('/api/stores/me/orders').then(r => r.json()),
+        fetch('/api/games').then(r => r.json())
       ]);
       if (storeData.ok) setStore(storeData.data);
       if (prodData.ok) setProducts(prodData.data);
       if (orderData.ok) setOrders(orderData.data);
+      if (gamesData.ok) setGames(gamesData.data || []);
     } catch {
       notify('err', 'Could not load store data.');
-    } finally { 
-      setLoading(false); 
+    } finally {
+      setLoading(false);
     }
   }
 
-  useEffect(() => { 
-    loadData(); 
+  useEffect(() => {
+    loadData();
   }, []);
 
   async function handleAddProduct(e: React.FormEvent) {
@@ -68,15 +71,15 @@ export default function StoreDashboard() {
     setSubmittingProduct(true);
     try {
       const res = await fetch('/api/stores/me/products', {
-        method: 'POST', 
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, sport, price: Number(price), qty: Number(qty) })
       });
       const data = await res.json();
       if (data.ok) {
         notify('ok', `Added "${name}" to your shop catalog!`);
-        setName(''); 
-        setPrice(''); 
+        setName('');
+        setPrice('');
         setQty('1');
         setShowAddForm(false);
         loadData();
@@ -93,21 +96,21 @@ export default function StoreDashboard() {
   async function updateQty(id: string, currentQty: number, diff: number) {
     const newQty = Math.max(0, currentQty + diff);
     setProducts(products.map(p => p.id === id ? { ...p, qty: newQty } : p));
-    await fetch('/api/stores/me/products', { 
-      method: 'PATCH', 
-      headers: { 'Content-Type': 'application/json' }, 
-      body: JSON.stringify({ productId: id, qty: newQty }) 
+    await fetch('/api/stores/me/products', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ productId: id, qty: newQty })
     });
   }
 
   async function updatePrice(id: string, newPrice: string) {
-    const p = Number(newPrice); 
+    const p = Number(newPrice);
     if (isNaN(p) || p <= 0) return;
     setProducts(products.map(x => x.id === id ? { ...x, price: p } : x));
-    await fetch('/api/stores/me/products', { 
-      method: 'PATCH', 
-      headers: { 'Content-Type': 'application/json' }, 
-      body: JSON.stringify({ productId: id, price: p }) 
+    await fetch('/api/stores/me/products', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ productId: id, price: p })
     });
     notify('ok', 'Item price updated.');
   }
@@ -121,10 +124,10 @@ export default function StoreDashboard() {
 
   async function handleFulfill(orderId: string) {
     try {
-      const res = await fetch('/api/stores/me/orders', { 
-        method: 'PATCH', 
-        headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ orderId }) 
+      const res = await fetch('/api/stores/me/orders', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId })
       });
       if ((await res.json()).ok) {
         notify('ok', 'Order marked as fulfilled & shipped!');
@@ -161,7 +164,7 @@ export default function StoreDashboard() {
 
   const isApproved = store.verificationStatus === 'approved';
 
-  const filteredProducts = products.filter(p => 
+  const filteredProducts = products.filter(p =>
     filterSport === 'All' || p.sport?.toLowerCase() === filterSport.toLowerCase()
   );
 
@@ -170,8 +173,8 @@ export default function StoreDashboard() {
       {/* Toast Notification */}
       {notification && (
         <div className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-2xl px-5 py-3.5 shadow-2xl border backdrop-blur-md animate-in slide-in-from-bottom duration-200 ${
-          notification.type === 'ok' 
-            ? 'bg-emerald-900/90 text-white border-emerald-700/80' 
+          notification.type === 'ok'
+            ? 'bg-emerald-900/90 text-white border-emerald-700/80'
             : 'bg-rose-900/90 text-white border-rose-700/80'
         }`}>
           {notification.type === 'ok' ? (
@@ -180,7 +183,7 @@ export default function StoreDashboard() {
             <AlertCircle className="h-5 w-5 text-rose-400 shrink-0" />
           )}
           <span className="text-xs font-semibold">{notification.text}</span>
-          <button 
+          <button
             onClick={() => setNotification(null)}
             className="ml-2 rounded-lg p-1 text-white/60 hover:text-white"
           >
@@ -190,34 +193,29 @@ export default function StoreDashboard() {
       )}
 
       {/* Store Hero Banner */}
-      <div className="card bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white border-slate-800 p-6 sm:p-8 relative overflow-hidden">
-        <div 
-          aria-hidden 
-          className="absolute -right-16 -top-16 w-64 h-64 rounded-full bg-brand-500/15 blur-3xl pointer-events-none" 
-        />
-
+      <div className="card bg-white text-[#172033] border-[#E2E8F0] p-6 sm:p-8 relative overflow-hidden shadow-sm">
         <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-6">
           <div className="flex items-center gap-4">
-            <div className="flex h-14 w-14 sm:h-16 sm:w-16 items-center justify-center rounded-2xl bg-gradient-to-tr from-brand-600 to-sky-400 text-white shadow-lg shadow-brand-500/25">
+            <div className="flex h-14 w-14 sm:h-16 sm:w-16 items-center justify-center rounded-2xl bg-blue-50 text-[#2563EB]">
               <ShoppingBag className="h-7 w-7" />
             </div>
             <div>
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#64748B]">
                   Sports Merchant Hub
                 </span>
-                <span className={`badge text-[10px] font-black uppercase ${
-                  isApproved 
-                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' 
-                    : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                <span className={`badge text-[10px] font-bold uppercase ${
+                  isApproved
+                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                    : 'bg-amber-50 text-amber-700 border border-amber-200'
                 }`}>
                   {isApproved ? 'Verified Partner' : 'Verification Pending'}
                 </span>
               </div>
-              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
+              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[#172033]">
                 {store.storeName}
               </h1>
-              <p className="text-xs text-slate-400 mt-0.5">
+              <p className="text-xs text-[#64748B] mt-0.5">
                 {store.address || 'Authorized Sports Equipment & Apparel Provider'}
               </p>
             </div>
@@ -284,7 +282,7 @@ export default function StoreDashboard() {
               </div>
               <h2 className="text-base font-bold text-slate-900">Add New Gear to Store</h2>
             </div>
-            <button 
+            <button
               onClick={() => setShowAddForm(false)}
               className="rounded-lg p-1 text-slate-400 hover:text-slate-700"
             >
@@ -295,62 +293,71 @@ export default function StoreDashboard() {
           <form onSubmit={handleAddProduct} className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="md:col-span-2">
               <label className="label">Item Name</label>
-              <input 
-                required 
-                value={name} 
-                onChange={e => setName(e.target.value)} 
-                className="input" 
-                placeholder="e.g. Wilson NBA Official Basketball" 
+              <input
+                required
+                value={name}
+                onChange={e => setName(e.target.value)}
+                className="input"
+                placeholder="e.g. Wilson NBA Official Basketball"
               />
             </div>
             <div>
-              <label className="label">Sport Category</label>
-              <select 
-                value={sport} 
-                onChange={e => setSport(e.target.value)} 
+              <label className="label">Sport / Game Category</label>
+              <select
+                value={sport}
+                onChange={e => setSport(e.target.value)}
                 className="input"
               >
-                <option>Basketball</option>
-                <option>Football</option>
-                <option>Cricket</option>
-                <option>Tennis</option>
+                {games.length > 0 ? (
+                  games.map(g => (
+                    <option key={g.id} value={g.name}>{g.name}</option>
+                  ))
+                ) : (
+                  <>
+                    <option>Badminton</option>
+                    <option>Football</option>
+                    <option>Cricket</option>
+                    <option>Basketball</option>
+                    <option>Tennis</option>
+                  </>
+                )}
               </select>
             </div>
             <div>
               <label className="label">Price (₹)</label>
-              <input 
-                type="number" 
-                required 
-                min="1" 
-                value={price} 
-                onChange={e => setPrice(e.target.value)} 
-                className="input" 
-                placeholder="e.g. 1499" 
+              <input
+                type="number"
+                required
+                min="1"
+                value={price}
+                onChange={e => setPrice(e.target.value)}
+                className="input"
+                placeholder="e.g. 1499"
               />
             </div>
             <div>
               <label className="label">Initial Stock Qty</label>
-              <input 
-                type="number" 
-                required 
-                min="0" 
-                value={qty} 
-                onChange={e => setQty(e.target.value)} 
-                className="input" 
-                placeholder="e.g. 10" 
+              <input
+                type="number"
+                required
+                min="0"
+                value={qty}
+                onChange={e => setQty(e.target.value)}
+                className="input"
+                placeholder="e.g. 10"
               />
             </div>
             <div className="md:col-span-3 flex items-end justify-end gap-2">
-              <button 
-                type="button" 
+              <button
+                type="button"
                 onClick={() => setShowAddForm(false)}
                 className="btn btn-secondary text-xs"
               >
                 Cancel
               </button>
-              <button 
-                type="submit" 
-                disabled={submittingProduct} 
+              <button
+                type="submit"
+                disabled={submittingProduct}
                 className="btn text-xs"
               >
                 {submittingProduct ? 'Saving Product...' : 'Add to Catalog'}
@@ -381,7 +388,7 @@ export default function StoreDashboard() {
                   key={s}
                   onClick={() => setFilterSport(s)}
                   className={`px-2.5 py-1 rounded-lg font-bold transition ${
-                    filterSport === s ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-100'
+                    filterSport === s ? 'bg-[#2563EB] text-white shadow-xs' : 'text-[#64748B] hover:bg-slate-100'
                   }`}
                 >
                   {s}
@@ -397,7 +404,7 @@ export default function StoreDashboard() {
               <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
                 Add equipment to your pro shop to make it visible to local athletes.
               </p>
-              <button 
+              <button
                 onClick={() => setShowAddForm(true)}
                 className="btn btn-sm btn-emerald mt-4"
               >
@@ -411,8 +418,8 @@ export default function StoreDashboard() {
                 const isOut = p.qty === 0;
                 const isLow = p.qty > 0 && p.qty <= 2;
                 return (
-                  <div 
-                    key={p.id} 
+                  <div
+                    key={p.id}
                     className="card p-4 border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
                   >
                     <div>
@@ -497,8 +504,8 @@ export default function StoreDashboard() {
               {orders.map((o) => {
                 const isShipped = o.status === 'shipped';
                 return (
-                  <div 
-                    key={o.id} 
+                  <div
+                    key={o.id}
                     className={`card p-4 border-slate-200 transition ${
                       isShipped ? 'bg-slate-50/70' : 'border-l-4 border-l-brand-500'
                     }`}

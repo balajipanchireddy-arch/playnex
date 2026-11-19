@@ -1,20 +1,20 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { 
-  Trophy, 
-  MapPin, 
-  Calendar, 
-  Star, 
-  ShoppingBag, 
-  CheckCircle2, 
-  AlertCircle, 
-  X, 
-  Sparkles, 
-  Radio, 
-  Activity, 
-  Filter, 
-  Search, 
+import {
+  Trophy,
+  MapPin,
+  Calendar,
+  Star,
+  ShoppingBag,
+  CheckCircle2,
+  AlertCircle,
+  X,
+  Sparkles,
+  Radio,
+  Activity,
+  Filter,
+  Search,
   ArrowUpRight,
   Clock,
   Landmark,
@@ -28,7 +28,8 @@ import {
   Info,
   Bell,
   SlidersHorizontal,
-  Package
+  Package,
+  Gamepad2
 } from 'lucide-react';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
@@ -58,6 +59,7 @@ export default function PlayerDashboard() {
   const [facilities, setFacilities] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [events, setEvents] = useState<any[]>([]);
+  const [games, setGames] = useState<any[]>([]);
   const [nearbyData, setNearbyData] = useState<{ callerCity: string; totalNearby: number; sportCounts: Record<string, number>; players: any[] } | null>(null);
 
   const [loading, setLoading] = useState(true);
@@ -67,7 +69,7 @@ export default function PlayerDashboard() {
   const [searchQuery, setSearchQuery] = useState('');
   const [nearbySportFilter, setNearbySportFilter] = useState<string>('All');
   const [nearbyAvailableOnly, setNearbyAvailableOnly] = useState<boolean>(false);
-  
+
   // Modals
   const [ratingModal, setRatingModal] = useState<{ id: string; type: 'facility' | 'product'; name: string } | null>(null);
   const [bookingModal, setBookingModal] = useState<{ facility: any; selectedSlot: string } | null>(null);
@@ -81,18 +83,19 @@ export default function PlayerDashboard() {
     promotions: true,
     announcements: true,
   });
-  
+
   const [actionBusy, setActionBusy] = useState<string | null>(null);
 
   async function loadData() {
     setLoading(true);
     try {
-      const [profData, facData, prodData, evtData, nearbyRes] = await Promise.all([
+      const [profData, facData, prodData, evtData, nearbyRes, gamesRes] = await Promise.all([
         fetch('/api/player/profile').then(r => r.json()),
         fetch('/api/facilities').then(r => r.json()),
         fetch('/api/products').then(r => r.json()),
         fetch('/api/tournaments').then(r => r.json()),
         fetch('/api/players/nearby').then(r => r.json()),
+        fetch('/api/games').then(r => r.json()),
       ]);
 
       if (profData.ok) {
@@ -105,6 +108,7 @@ export default function PlayerDashboard() {
       if (prodData.ok) setProducts(prodData.data || []);
       if (evtData.ok) setEvents(evtData.data || []);
       if (nearbyRes.ok) setNearbyData(nearbyRes.data);
+      if (gamesRes.ok) setGames(gamesRes.data || []);
     } catch (e) {
       console.error(e);
     } finally {
@@ -146,10 +150,10 @@ export default function PlayerDashboard() {
     const newState = !profile.available;
     setProfile({ ...profile, available: newState });
     try {
-      await fetch('/api/player/profile', { 
-        method: 'PUT', 
-        headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ available: newState }) 
+      await fetch('/api/player/profile', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ available: newState })
       });
       notify('ok', newState ? 'You are now marked available for matches!' : 'You are now marked offline.');
     } catch {
@@ -223,18 +227,18 @@ export default function PlayerDashboard() {
 
     setActionBusy(`book-${f.id}`);
     try {
-      const res = await fetch('/api/bookings', { 
-        method: 'POST', 
-        headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ facilityId: f.id, facilityName: f.name, slot, price: f.price }) 
+      const res = await fetch('/api/bookings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ facilityId: f.id, facilityName: f.name, slot, price: f.price })
       });
       const data = await res.json();
-      if (data.ok) { 
-        notify('ok', `Successfully reserved ${formatSlot(slot)} slot at ${f.name}!`); 
+      if (data.ok) {
+        notify('ok', `Successfully reserved ${formatSlot(slot)} slot at ${f.name}!`);
         setBookingModal(null);
-        loadData(); 
-      } else { 
-        notify('err', data.error?.message || 'Failed to book slot.'); 
+        loadData();
+      } else {
+        notify('err', data.error?.message || 'Failed to book slot.');
       }
     } catch {
       notify('err', 'Network error while booking.');
@@ -246,17 +250,17 @@ export default function PlayerDashboard() {
   async function handleBuy(p: any) {
     setActionBusy(`buy-${p.id}`);
     try {
-      const res = await fetch('/api/orders', { 
-        method: 'POST', 
-        headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ productId: p.id, productName: p.name, storeId: p.storeId, price: p.price, qty: 1 }) 
+      const res = await fetch('/api/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ productId: p.id, productName: p.name, storeId: p.storeId, price: p.price, qty: 1 })
       });
       const data = await res.json();
-      if (data.ok) { 
-        notify('ok', `Order placed for ${p.name}! Total: ₹${p.price}. Confirmation notification sent.`); 
-        loadData(); 
-      } else { 
-        notify('err', data.error?.message || 'Failed to place order.'); 
+      if (data.ok) {
+        notify('ok', `Order placed for ${p.name}! Total: ₹${p.price}. Confirmation notification sent.`);
+        loadData();
+      } else {
+        notify('err', data.error?.message || 'Failed to place order.');
       }
     } catch {
       notify('err', 'Network error during purchase.');
@@ -290,13 +294,13 @@ export default function PlayerDashboard() {
     if (!ratingModal) return;
     try {
       const res = await fetch('/api/ratings', {
-        method: 'POST', 
-        headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ targetId: ratingModal.id, targetType: ratingModal.type, rating: score }) 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetId: ratingModal.id, targetType: ratingModal.type, rating: score })
       });
       if ((await res.json()).ok) {
         notify('ok', `Thank you for rating ${ratingModal.name} ${score} stars!`);
-        setRatingModal(null); 
+        setRatingModal(null);
         loadData();
       }
     } catch {
@@ -331,9 +335,20 @@ export default function PlayerDashboard() {
   }
 
   // Filter logic
+  const availableSports = [
+    'All',
+    ...Array.from(new Set([
+      ...games.map((g: any) => g.name),
+      'Basketball', 'Football', 'Cricket', 'Tennis'
+    ]))
+  ];
+
   const filteredEvents = events.filter((e) => {
     if (e.status === 'Draft') return false;
-    const matchesSport = selectedSport === 'All' || e.sport?.toLowerCase() === selectedSport.toLowerCase();
+    const matchesSport = selectedSport === 'All' ||
+      e.sport?.toLowerCase() === selectedSport.toLowerCase() ||
+      e.sport?.toLowerCase().includes(selectedSport.toLowerCase()) ||
+      selectedSport.toLowerCase().includes(e.sport?.toLowerCase() || '');
     const matchesSearch = !searchQuery || e.name?.toLowerCase().includes(searchQuery.toLowerCase()) || (e.venue || e.loc)?.toLowerCase().includes(searchQuery.toLowerCase());
     return matchesSport && matchesSearch;
   });
@@ -361,8 +376,8 @@ export default function PlayerDashboard() {
       {/* Toast Notification */}
       {notification && (
         <div className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-2xl px-5 py-3.5 shadow-2xl border backdrop-blur-md animate-in slide-in-from-bottom duration-200 ${
-          notification.type === 'ok' 
-            ? 'bg-emerald-900/90 text-white border-emerald-700/80' 
+          notification.type === 'ok'
+            ? 'bg-emerald-900/90 text-white border-emerald-700/80'
             : 'bg-rose-900/90 text-white border-rose-700/80'
         }`}>
           {notification.type === 'ok' ? (
@@ -371,7 +386,7 @@ export default function PlayerDashboard() {
             <AlertCircle className="h-5 w-5 text-rose-400 shrink-0" />
           )}
           <span className="text-xs font-semibold">{notification.text}</span>
-          <button 
+          <button
             onClick={() => setNotification(null)}
             className="ml-2 rounded-lg p-1 text-white/60 hover:text-white"
           >
@@ -381,31 +396,26 @@ export default function PlayerDashboard() {
       )}
 
       {/* Hero Athlete Overview Card */}
-      <div className="card bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white border-slate-800 p-6 sm:p-8 relative overflow-hidden">
-        <div 
-          aria-hidden 
-          className="absolute -right-16 -top-16 w-64 h-64 rounded-full bg-brand-500/15 blur-3xl pointer-events-none" 
-        />
-
+      <div className="card bg-white text-[#172033] border-[#E2E8F0] p-6 sm:p-8 relative overflow-hidden shadow-sm">
         <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-6">
           <div className="flex items-center gap-4">
-            <div className="flex h-14 w-14 sm:h-16 sm:w-16 items-center justify-center rounded-2xl bg-gradient-to-tr from-brand-600 to-teal-500 text-white shadow-lg shadow-brand-500/25">
+            <div className="flex h-14 w-14 sm:h-16 sm:w-16 items-center justify-center rounded-2xl bg-blue-50 text-[#2563EB]">
               <Trophy className="h-7 w-7" />
             </div>
             <div>
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#64748B]">
                   Athlete Dashboard
                 </span>
-                <span className="badge badge-brand text-[10px] font-black uppercase">
+                <span className="badge badge-brand text-[10px] font-bold uppercase">
                   {profile.skill || 'Intermediate'}
                 </span>
               </div>
-              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
+              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[#172033]">
                 {profile.name}
               </h1>
-              <p className="text-xs text-slate-400 flex items-center gap-1.5 mt-0.5">
-                <MapPin className="h-3.5 w-3.5 text-slate-500" />
+              <p className="text-xs text-[#64748B] flex items-center gap-1.5 mt-0.5">
+                <MapPin className="h-3.5 w-3.5 text-[#64748B]" />
                 <span>{profile.location || 'Visakhapatnam'}</span>
                 <span>•</span>
                 <span>Sports: {profile.sportsPreferences?.join(', ') || 'Basketball, Football'}</span>
@@ -417,13 +427,13 @@ export default function PlayerDashboard() {
             {/* Availability Toggle */}
             <button
               onClick={toggleAvailability}
-              className={`flex items-center gap-2 rounded-2xl px-4 py-2.5 text-xs font-bold transition shadow-sm border ${
+              className={`flex items-center gap-2 rounded-2xl px-4 py-2.5 text-xs font-bold transition shadow-xs border ${
                 profile.available
-                  ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25'
-                  : 'bg-slate-800/80 border-slate-700 text-slate-400 hover:bg-slate-800'
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'
+                  : 'bg-slate-100 border-slate-200 text-[#64748B] hover:bg-slate-200'
               }`}
             >
-              <span className={`h-2.5 w-2.5 rounded-full ${profile.available ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
+              <span className={`h-2.5 w-2.5 rounded-full ${profile.available ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
               <span>{profile.available ? 'Available for Games' : 'Marked Offline'}</span>
             </button>
 
@@ -452,32 +462,32 @@ export default function PlayerDashboard() {
         </div>
 
         {/* Stats Strip */}
-        <div className="mt-6 pt-6 border-t border-slate-800/80 grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
+        <div className="mt-6 pt-6 border-t border-[#E2E8F0] grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
           <div>
-            <p className="text-slate-400 font-medium">Turf Arenas</p>
-            <p className="text-xl font-bold text-white mt-0.5">{facilities.length} available</p>
+            <p className="text-[#64748B] font-medium">Turf Arenas</p>
+            <p className="text-xl font-bold text-[#172033] mt-0.5">{facilities.length} available</p>
           </div>
           <div>
-            <p className="text-slate-400 font-medium">Live Tournaments</p>
-            <p className="text-xl font-bold text-amber-400 mt-0.5">{events.filter(e => e.status !== 'Draft').length} open</p>
+            <p className="text-[#64748B] font-medium">Live Tournaments</p>
+            <p className="text-xl font-bold text-amber-700 mt-0.5">{events.filter(e => e.status !== 'Draft').length} open</p>
           </div>
           <div>
-            <p className="text-slate-400 font-medium">Nearby Players</p>
-            <p className="text-xl font-bold text-teal-400 mt-0.5">{nearbyData?.totalNearby || 0} discovered</p>
+            <p className="text-[#64748B] font-medium">Nearby Players</p>
+            <p className="text-xl font-bold text-teal-700 mt-0.5">{nearbyData?.totalNearby || 0} discovered</p>
           </div>
           <div>
-            <p className="text-slate-400 font-medium">Win Rate & Matches</p>
-            <p className="text-xl font-bold text-brand-400 mt-0.5">{profile.winRate || '75%'} ({profile.matchesPlayed || 12} games)</p>
+            <p className="text-[#64748B] font-medium">Win Rate & Matches</p>
+            <p className="text-xl font-bold text-[#2563EB] mt-0.5">{profile.winRate || '75%'} ({profile.matchesPlayed || 12} games)</p>
           </div>
         </div>
       </div>
 
       {/* FILTER & SEARCH STRIP */}
-      <div className="card p-4 border-slate-200">
+      <div className="card p-4 border-[#E2E8F0] bg-white">
         <div className="flex flex-col md:flex-row items-center justify-between gap-4">
           {/* Sports Filter Pills */}
           <div className="flex items-center gap-1.5 overflow-x-auto w-full md:w-auto pb-1 md:pb-0">
-            {SPORTS.map((sport) => {
+            {availableSports.map((sport) => {
               const isSelected = selectedSport === sport;
               return (
                 <button
@@ -485,8 +495,8 @@ export default function PlayerDashboard() {
                   onClick={() => setSelectedSport(sport)}
                   className={`rounded-xl px-3.5 py-1.5 text-xs font-bold transition whitespace-nowrap ${
                     isSelected
-                      ? 'bg-brand-600 text-white shadow-xs'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200/80'
+                      ? 'bg-[#2563EB] text-white shadow-xs'
+                      : 'bg-slate-100 text-[#64748B] hover:bg-slate-200 hover:text-[#172033]'
                   }`}
                 >
                   {sport}
@@ -497,7 +507,7 @@ export default function PlayerDashboard() {
 
           {/* Search Input */}
           <div className="relative w-full md:w-72">
-            <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-[#64748B]" />
             <input
               type="text"
               placeholder="Search tournaments, grounds, gear..."
@@ -509,6 +519,69 @@ export default function PlayerDashboard() {
         </div>
       </div>
 
+      {/* GAMES EXPLORATION CAROUSEL STRIP */}
+      {games.length > 0 && (
+        <section className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg bg-blue-50 text-[#2563EB] flex items-center justify-center">
+                <Gamepad2 className="h-4 w-4" />
+              </div>
+              <h2 className="text-base font-bold text-[#172033]">
+                Supported Games & Esports ({games.length})
+              </h2>
+            </div>
+            {selectedSport !== 'All' && (
+              <button
+                onClick={() => setSelectedSport('All')}
+                className="text-xs text-[#2563EB] hover:underline font-semibold"
+              >
+                Reset Filter
+              </button>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+            {games.map((g) => {
+              const isSelected = selectedSport.toLowerCase() === g.name.toLowerCase();
+              return (
+                <button
+                  key={g.id}
+                  onClick={() => setSelectedSport(isSelected ? 'All' : g.name)}
+                  className={`group relative rounded-xl border p-3 text-left transition-all ${
+                    isSelected
+                      ? 'border-[#2563EB] bg-[#DBEAFE] shadow-xs ring-1 ring-[#2563EB]'
+                      : 'border-[#E2E8F0] bg-white hover:border-slate-300 hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="h-16 w-full rounded-lg bg-slate-100 overflow-hidden mb-2 relative">
+                    {g.bannerUrl || g.logoUrl ? (
+                      <img
+                        src={g.bannerUrl || g.logoUrl}
+                        alt={g.name}
+                        className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      />
+                    ) : (
+                      <div className="h-full w-full flex items-center justify-center text-slate-400 bg-slate-100">
+                        <Gamepad2 className="h-6 w-6" />
+                      </div>
+                    )}
+                    <span className="absolute bottom-1 right-1 badge bg-white/90 text-[#172033] border border-[#E2E8F0] text-[8px] uppercase py-0 px-1 shadow-xs font-semibold">
+                      {g.category}
+                    </span>
+                  </div>
+                  <p className="text-xs font-bold text-[#172033] truncate group-hover:text-[#2563EB] transition">
+                    {g.name}
+                  </p>
+                  <p className="text-[10px] text-[#64748B] mt-0.5">
+                    {isSelected ? 'Active Filter' : 'Filter Tournaments'}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      )}
       {/* 1. REAL-TIME TOURNAMENTS SECTION */}
       <section className="space-y-4">
         <div className="flex items-center justify-between">
@@ -545,8 +618,8 @@ export default function PlayerDashboard() {
               const isFull = slotsLeft === 0;
 
               return (
-                <div 
-                  key={e.id} 
+                <div
+                  key={e.id}
                   className="card card-hover flex flex-col justify-between border-l-4 border-l-amber-500 p-5"
                 >
                   <div>
@@ -727,17 +800,17 @@ export default function PlayerDashboard() {
         ) : (
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {filteredFacilities.map((f) => (
-              <div 
-                key={f.id} 
+              <div
+                key={f.id}
                 className="card card-hover p-0 overflow-hidden flex flex-col justify-between border-slate-200"
               >
                 <div>
                   <div className="relative h-44 w-full bg-slate-100 overflow-hidden">
                     {f.image ? (
-                      <img 
-                        src={f.image} 
-                        alt={f.name} 
-                        className="h-full w-full object-cover transition duration-300 hover:scale-105" 
+                      <img
+                        src={f.image}
+                        alt={f.name}
+                        className="h-full w-full object-cover transition duration-300 hover:scale-105"
                       />
                     ) : (
                       <div className="flex h-full w-full items-center justify-center bg-gradient-to-tr from-slate-100 to-slate-200 text-slate-400">
@@ -830,17 +903,17 @@ export default function PlayerDashboard() {
             {filteredProducts.map((p) => {
               const inStock = p.qty > 0;
               return (
-                <div 
-                  key={p.id} 
+                <div
+                  key={p.id}
                   className="card card-hover p-0 overflow-hidden flex flex-col justify-between border-slate-200"
                 >
                   <div>
                     <div className="relative h-36 w-full bg-slate-100 overflow-hidden">
                       {p.image ? (
-                        <img 
-                          src={p.image} 
-                          alt={p.name} 
-                          className="h-full w-full object-cover transition duration-300 hover:scale-105" 
+                        <img
+                          src={p.image}
+                          alt={p.name}
+                          className="h-full w-full object-cover transition duration-300 hover:scale-105"
                         />
                       ) : (
                         <div className="flex h-full w-full items-center justify-center bg-gradient-to-tr from-slate-100 to-slate-200 text-slate-400">
@@ -857,7 +930,7 @@ export default function PlayerDashboard() {
                         <h3 className="font-bold text-sm text-slate-900 line-clamp-1">{p.name}</h3>
                       </div>
                       <p className="text-[11px] text-slate-400 truncate">{p.storeName || 'Verified Store'}</p>
-                      
+
                       <div className="mt-2.5 flex items-center justify-between">
                         <span className="font-extrabold text-brand-600 text-sm">₹{p.price}</span>
                         <StarRating rating={p.rating || 0} count={p.ratingCount || 0} />
@@ -1065,7 +1138,7 @@ export default function PlayerDashboard() {
                           disabled={!isAvail}
                           onClick={() => setBookingModal({ ...bookingModal, selectedSlot: s })}
                           className={`p-2 rounded-xl text-center text-xs font-bold border transition ${
-                            !isAvail 
+                            !isAvail
                               ? 'bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed'
                               : isSel
                               ? 'bg-brand-600 text-white border-brand-600 shadow-sm'
@@ -1084,7 +1157,7 @@ export default function PlayerDashboard() {
               <button onClick={() => setBookingModal(null)} className="btn btn-secondary text-xs">
                 Cancel
               </button>
-              <button 
+              <button
                 onClick={handleConfirmBooking}
                 disabled={actionBusy === `book-${bookingModal.facility.id}`}
                 className="btn text-xs"
