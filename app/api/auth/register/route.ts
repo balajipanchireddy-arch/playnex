@@ -44,6 +44,11 @@ export async function POST(req: NextRequest) {
         storeId: uid, ownerUserId: uid, storeName: fullName + "'s Store",
         address: 'Update address', contact: '', verificationStatus: 'pending', createdAt: now
       }, { merge: true });
+    } else if (role === 'academy') {
+      await adminDb.collection('academies').doc(uid).set({
+        academyId: uid, ownerUserId: uid, academyName: fullName + "'s Academy",
+        address: 'Update address', contact: '', verificationStatus: 'pending', createdAt: now
+      }, { merge: true });
     }
 
     await adminAuth.setCustomUserClaims(uid, { roles: [role] });

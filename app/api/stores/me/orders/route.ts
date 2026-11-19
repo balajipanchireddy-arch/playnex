@@ -15,7 +15,7 @@ export async function GET() {
   } catch (e: any) { return fail('server_error', e.message, 500); }
 }
 
-const PatchBody = z.object({ orderId: z.string() });
+const PatchBody = z.object({ orderId: z.string().min(1) });
 
 export async function PATCH(req: NextRequest) {
   const session = await verifySession();
@@ -25,8 +25,14 @@ export async function PATCH(req: NextRequest) {
     const parsed = PatchBody.safeParse(await req.json());
     if (!parsed.success) return fail('invalid', 'Invalid input', 400);
 
-    await adminDb.collection('orders').doc(parsed.data.orderId).update({
-      status: 'shipped'
+    const orderRef = adminDb.collection('orders').doc(parsed.data.orderId);
+    const orderSnap = await orderRef.get();
+    if (!orderSnap.exists) return fail('not_found', 'Order not found', 404);
+    if (orderSnap.data().storeId !== session.uid) return fail('forbidden', 'Unauthorized', 403);
+
+    await orderRef.update({
+      status: 'shipped',
+      shippedAt: Date.now()
     });
 
     return ok({ success: true });

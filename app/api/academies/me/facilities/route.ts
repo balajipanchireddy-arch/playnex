@@ -9,6 +9,7 @@ const Body = z.object({
   address: z.string().min(2),
   sport: z.string().min(2),
   price: z.number().min(1),
+  image: z.string().optional(),
 });
 
 export async function GET() {
@@ -27,14 +28,23 @@ export async function POST(req: NextRequest) {
   try {
     const parsed = Body.safeParse(await req.json());
     if (!parsed.success) return fail('invalid', 'Invalid input', 400);
-    const { name, address, sport, price } = parsed.data;
+    const { name, address, sport, price, image } = parsed.data;
     
     const defaultSlots: Record<string, boolean> = {};
     for (let i = 6; i <= 22; i++) defaultSlots[i.toString()] = true;
 
     await adminDb.collection('facilities').add({
-      academyId: session.uid, name, address, sport, price,
-      slots: defaultSlots, closed: false, createdAt: Date.now()
+      academyId: session.uid,
+      name,
+      address,
+      sport,
+      price,
+      image: image || '',
+      rating: 0,
+      ratingCount: 0,
+      slots: defaultSlots,
+      closed: false,
+      createdAt: Date.now()
     });
     return ok({ success: true });
   } catch (e: any) { return fail('server_error', e.message, 500); }
@@ -56,12 +66,17 @@ export async function PATCH(req: NextRequest) {
     if (!parsed.success) return fail('invalid', 'Invalid input', 400);
     const { facilityId, slot, available, price, closed } = parsed.data;
 
+    const facRef = adminDb.collection('facilities').doc(facilityId);
+    const facSnap = await facRef.get();
+    if (!facSnap.exists) return fail('not_found', 'Facility not found', 404);
+    if (facSnap.data().academyId !== session.uid) return fail('forbidden', 'Unauthorized', 403);
+
     const updates: any = {};
     if (slot !== undefined && available !== undefined) updates[`slots.${slot}`] = available;
     if (price !== undefined) updates.price = price;
     if (closed !== undefined) updates.closed = closed;
 
-    await adminDb.collection('facilities').doc(facilityId).update(updates);
+    await facRef.update(updates);
     return ok({ success: true });
   } catch (e: any) { return fail('server_error', e.message, 500); }
 }
@@ -73,7 +88,13 @@ export async function DELETE(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const facilityId = searchParams.get('facilityId');
     if (!facilityId) return fail('invalid', 'Missing facilityId', 400);
-    await adminDb.collection('facilities').doc(facilityId).delete();
+
+    const facRef = adminDb.collection('facilities').doc(facilityId);
+    const facSnap = await facRef.get();
+    if (!facSnap.exists) return fail('not_found', 'Facility not found', 404);
+    if (facSnap.data().academyId !== session.uid) return fail('forbidden', 'Unauthorized', 403);
+
+    await facRef.delete();
     return ok({ success: true });
   } catch (e: any) { return fail('server_error', e.message, 500); }
 }

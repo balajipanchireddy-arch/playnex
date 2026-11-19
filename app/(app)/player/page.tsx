@@ -19,7 +19,9 @@ import {
   Clock,
   Landmark,
   ShieldCheck,
-  Check
+  Check,
+  Edit3,
+  UserCheck
 } from 'lucide-react';
 
 function StarRating({ rating, count }: { rating: number; count: number }) {
@@ -52,8 +54,13 @@ export default function PlayerDashboard() {
 
   const [selectedSport, setSelectedSport] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState('');
+  
+  // Modals
   const [ratingModal, setRatingModal] = useState<{ id: string; type: 'facility' | 'product'; name: string } | null>(null);
   const [hoverRating, setHoverRating] = useState<number>(0);
+  const [bookingModal, setBookingModal] = useState<{ facility: any; selectedSlot: string } | null>(null);
+  const [profileModal, setProfileModal] = useState<{ name: string; skill: string; location: string } | null>(null);
+  
   const [actionBusy, setActionBusy] = useState<string | null>(null);
 
   async function loadData() {
@@ -98,20 +105,60 @@ export default function PlayerDashboard() {
     }
   }
 
-  async function handleBook(f: any) {
+  async function handleSaveProfile(e: React.FormEvent) {
+    e.preventDefault();
+    if (!profileModal) return;
+    setActionBusy('profile-save');
+    try {
+      const res = await fetch('/api/player/profile', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(profileModal)
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setProfile({ ...profile, ...profileModal });
+        setProfileModal(null);
+        notify('ok', 'Athlete profile updated successfully!');
+      } else {
+        notify('err', data.error?.message || 'Failed to update profile.');
+      }
+    } catch {
+      notify('err', 'Network error updating profile.');
+    } finally {
+      setActionBusy(null);
+    }
+  }
+
+  function openBookingModal(f: any) {
+    if (f.closed) {
+      notify('err', 'This ground is temporarily closed for bookings.');
+      return;
+    }
+    const slots = f.slots || {};
+    const firstAvailable = Object.keys(slots).sort((a,b) => Number(a)-Number(b)).find(k => slots[k] === true) || '18';
+    setBookingModal({ facility: f, selectedSlot: firstAvailable });
+  }
+
+  async function handleConfirmBooking() {
+    if (!bookingModal || !bookingModal.selectedSlot) return;
+    const f = bookingModal.facility;
+    const slot = bookingModal.selectedSlot;
+
     setActionBusy(`book-${f.id}`);
     try {
       const res = await fetch('/api/bookings', { 
         method: 'POST', 
         headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ facilityId: f.id, facilityName: f.name, slot: '18', price: f.price }) 
+        body: JSON.stringify({ facilityId: f.id, facilityName: f.name, slot, price: f.price }) 
       });
       const data = await res.json();
       if (data.ok) { 
-        notify('ok', `Reserved a slot at ${f.name}!`); 
+        notify('ok', `Successfully reserved ${formatSlot(slot)} slot at ${f.name}!`); 
+        setBookingModal(null);
         loadData(); 
       } else { 
-        notify('err', 'Failed to book slot.'); 
+        notify('err', data.error?.message || 'Failed to book slot.'); 
       }
     } catch {
       notify('err', 'Network error while booking.');
@@ -133,7 +180,7 @@ export default function PlayerDashboard() {
         notify('ok', `Order placed for ${p.name}! Total: ₹${p.price}`); 
         loadData(); 
       } else { 
-        notify('err', 'Failed to place order.'); 
+        notify('err', data.error?.message || 'Failed to place order.'); 
       }
     } catch {
       notify('err', 'Network error during purchase.');
@@ -180,6 +227,13 @@ export default function PlayerDashboard() {
       notify('err', 'Failed to submit rating.');
     }
   }
+
+  const formatSlot = (h: string) => {
+    const val = parseInt(h);
+    const hour = val % 12 || 12;
+    const ampm = val >= 12 ? 'PM' : 'AM';
+    return `${hour}:00 ${ampm}`;
+  };
 
   if (loading) {
     return (
@@ -242,6 +296,169 @@ export default function PlayerDashboard() {
           >
             <X className="h-3.5 w-3.5" />
           </button>
+        </div>
+      )}
+
+      {/* Edit Profile Modal */}
+      {profileModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-150">
+          <div className="card max-w-md w-full p-6 shadow-2xl border-slate-200">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center">
+                  <Edit3 className="h-4 w-4" />
+                </div>
+                <h3 className="text-base font-bold text-slate-900">Edit Athlete Profile</h3>
+              </div>
+              <button 
+                onClick={() => setProfileModal(null)}
+                className="rounded-lg p-1 text-slate-400 hover:text-slate-700"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveProfile} className="space-y-4">
+              <div>
+                <label className="label">Athlete Full Name</label>
+                <input 
+                  required
+                  value={profileModal.name}
+                  onChange={e => setProfileModal({ ...profileModal, name: e.target.value })}
+                  className="input"
+                />
+              </div>
+
+              <div>
+                <label className="label">Skill Level</label>
+                <select 
+                  value={profileModal.skill}
+                  onChange={e => setProfileModal({ ...profileModal, skill: e.target.value })}
+                  className="input"
+                >
+                  <option>Beginner</option>
+                  <option>Intermediate</option>
+                  <option>Advanced</option>
+                  <option>Semi-Pro</option>
+                  <option>Professional</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="label">Location / City</label>
+                <input 
+                  required
+                  value={profileModal.location}
+                  onChange={e => setProfileModal({ ...profileModal, location: e.target.value })}
+                  className="input"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button 
+                  type="button" 
+                  onClick={() => setProfileModal(null)}
+                  className="btn btn-secondary text-xs"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  disabled={actionBusy === 'profile-save'}
+                  className="btn text-xs"
+                >
+                  {actionBusy === 'profile-save' ? 'Saving...' : 'Save Profile'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Booking Slot Selection Modal */}
+      {bookingModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-150">
+          <div className="card max-w-lg w-full p-6 shadow-2xl border-slate-200">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-teal-50 text-teal-600 flex items-center justify-center">
+                  <Clock className="h-4 w-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">
+                    Book Slot: {bookingModal.facility.name}
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    ₹{bookingModal.facility.price}/hr · {bookingModal.facility.sport}
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setBookingModal(null)}
+                className="rounded-lg p-1 text-slate-400 hover:text-slate-700"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mb-4">
+              <label className="label">Select an Available Time Slot for Today</label>
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-60 overflow-y-auto p-1">
+                {Object.keys(bookingModal.facility.slots || {})
+                  .sort((a,b) => Number(a)-Number(b))
+                  .map((slot) => {
+                    const isAvailable = bookingModal.facility.slots[slot] === true;
+                    const isSelected = bookingModal.selectedSlot === slot;
+                    return (
+                      <button
+                        key={slot}
+                        type="button"
+                        disabled={!isAvailable}
+                        onClick={() => setBookingModal({ ...bookingModal, selectedSlot: slot })}
+                        className={`p-2.5 rounded-xl border text-center transition ${
+                          !isAvailable
+                            ? 'bg-slate-100 text-slate-400 border-slate-200 opacity-60 cursor-not-allowed'
+                            : isSelected
+                            ? 'bg-brand-600 text-white border-brand-700 shadow-sm font-bold ring-2 ring-brand-500/20'
+                            : 'bg-emerald-50 text-emerald-800 border-emerald-200/80 hover:bg-emerald-100'
+                        }`}
+                      >
+                        <span className="block text-xs font-black">{formatSlot(slot)}</span>
+                        <span className="block text-[10px] mt-0.5 opacity-90">
+                          {isAvailable ? 'Available' : 'Booked'}
+                        </span>
+                      </button>
+                    );
+                  })}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-4 border-t border-slate-100">
+              <div className="text-xs">
+                <span className="text-slate-400">Selected Slot: </span>
+                <span className="font-extrabold text-slate-900">
+                  {bookingModal.selectedSlot ? formatSlot(bookingModal.selectedSlot) : 'None'}
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <button 
+                  type="button" 
+                  onClick={() => setBookingModal(null)}
+                  className="btn btn-secondary text-xs"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="button" 
+                  onClick={handleConfirmBooking}
+                  disabled={!bookingModal.selectedSlot || actionBusy === `book-${bookingModal.facility.id}`}
+                  className="btn text-xs"
+                >
+                  {actionBusy === `book-${bookingModal.facility.id}` ? 'Reserving...' : `Confirm & Pay ₹${bookingModal.facility.price}`}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -319,7 +536,14 @@ export default function PlayerDashboard() {
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5">
+            <button
+              onClick={() => setProfileModal({ name: profile.name, skill: profile.skill, location: profile.location })}
+              className="btn btn-sm btn-secondary text-xs"
+            >
+              <Edit3 className="h-3.5 w-3.5" />
+              Edit Profile
+            </button>
             <button
               onClick={toggleAvailability}
               className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold transition shadow-sm ${
@@ -496,6 +720,11 @@ export default function PlayerDashboard() {
                     <span className="absolute top-3 left-3 badge bg-white/90 text-slate-900 backdrop-blur-sm shadow-xs text-xs font-bold">
                       {f.sport}
                     </span>
+                    {f.closed && (
+                      <span className="absolute top-3 right-3 badge bg-rose-600 text-white text-xs font-bold shadow-sm">
+                        Closed
+                      </span>
+                    )}
                   </div>
 
                   <div className="p-5">
@@ -514,18 +743,20 @@ export default function PlayerDashboard() {
                         <span className="text-lg font-black text-brand-600">₹{f.price}</span>
                         <span className="text-[11px] font-semibold text-slate-400">/ hour</span>
                       </div>
-                      <span className="badge badge-ok text-[10px]">Active Slots</span>
+                      <span className={`badge text-[10px] ${f.closed ? 'badge-bad' : 'badge-ok'}`}>
+                        {f.closed ? 'Unavailable' : 'Active Slots'}
+                      </span>
                     </div>
                   </div>
                 </div>
 
                 <div className="p-5 pt-0 grid grid-cols-2 gap-2">
                   <button
-                    onClick={() => handleBook(f)}
-                    disabled={actionBusy === `book-${f.id}`}
-                    className="btn btn-sm"
+                    onClick={() => openBookingModal(f)}
+                    disabled={f.closed || actionBusy === `book-${f.id}`}
+                    className={`btn btn-sm ${f.closed ? 'opacity-50 cursor-not-allowed bg-slate-200 text-slate-500' : ''}`}
                   >
-                    {actionBusy === `book-${f.id}` ? 'Booking...' : 'Book Slot'}
+                    {f.closed ? 'Closed' : 'Book Slot'}
                   </button>
                   <button
                     onClick={() => setRatingModal({ id: f.id, type: 'facility', name: f.name })}
