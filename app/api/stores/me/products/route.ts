@@ -23,7 +23,7 @@ async function isStoreOrAdmin(uid: string) {
 }
 
 export async function GET() {
-  const session = await verifySession(); 
+  const session = await verifySession();
   if (!session) return fail('unauthorized', 'Login required', 401);
   try {
     const snap = await adminDb.collection('products').where('storeId', '==', session.uid).get();
@@ -32,7 +32,7 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const session = await verifySession(); 
+  const session = await verifySession();
   if (!session) return fail('unauthorized', 'Login required', 401);
 
   if (!(await isStoreOrAdmin(session.uid))) {
@@ -43,20 +43,20 @@ export async function POST(req: NextRequest) {
     const parsed = Body.safeParse(await req.json());
     if (!parsed.success) return fail('invalid', 'Invalid input payload', 400);
     const { name, sport, price, qty } = parsed.data;
-    
+
     const storeDoc = await adminDb.collection('stores').doc(session.uid).get();
     const storeName = storeDoc.exists ? storeDoc.data()?.storeName : 'Verified Store';
 
-    const docRef = await adminDb.collection('products').add({ 
-      storeId: session.uid, 
-      storeName, 
-      name, 
-      sport, 
-      price, 
+    const docRef = await adminDb.collection('products').add({
+      storeId: session.uid,
+      storeName,
+      name,
+      sport,
+      price,
       qty,
       rating: 0,
       ratingCount: 0,
-      createdAt: Date.now() 
+      createdAt: Date.now()
     });
 
     await logActivity({
@@ -87,14 +87,14 @@ export async function POST(req: NextRequest) {
   } catch (e: any) { return fail('server_error', e.message, 500); }
 }
 
-const PatchBody = z.object({ 
-  productId: z.string().min(1), 
-  qty: z.number().optional(), 
-  price: z.number().optional() 
+const PatchBody = z.object({
+  productId: z.string().min(1),
+  qty: z.number().optional(),
+  price: z.number().optional()
 });
 
 export async function PATCH(req: NextRequest) {
-  const session = await verifySession(); 
+  const session = await verifySession();
   if (!session) return fail('unauthorized', 'Login required', 401);
   try {
     const parsed = PatchBody.safeParse(await req.json());
@@ -110,7 +110,7 @@ export async function PATCH(req: NextRequest) {
     const updates: any = {};
     if (qty !== undefined) updates.qty = Math.max(0, qty);
     if (price !== undefined) updates.price = price;
-    
+
     await prodRef.update(updates);
 
     // If price dropped meaningfully, notify interested players
@@ -132,7 +132,7 @@ export async function PATCH(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const session = await verifySession(); 
+  const session = await verifySession();
   if (!session) return fail('unauthorized', 'Login required', 401);
   try {
     const { searchParams } = new URL(req.url);
@@ -142,9 +142,31 @@ export async function DELETE(req: NextRequest) {
     const prodRef = adminDb.collection('products').doc(productId);
     const prodSnap = await prodRef.get();
     if (!prodSnap.exists) return fail('not_found', 'Product not found', 404);
-    if (prodSnap.data().storeId !== session.uid) return fail('forbidden', 'Unauthorized to delete this product', 403);
 
+    const prodData = prodSnap.data();
+    const canDelete = await isStoreOrAdmin(session.uid);
+    if (!canDelete || (prodData.storeId !== session.uid && !(await (async () => {
+      const snap = await adminDb.collection('userRoles').where('userId', '==', session.uid).where('roleId', '==', 'admin').get();
+      return !snap.empty;
+    })()))) {
+      return fail('forbidden', 'Unauthorized to delete this product', 403);
+    }
+
+    // Delete product document (orders retain snapshot copies for financial auditing)
     await prodRef.delete();
-    return ok({ success: true });
-  } catch (e: any) { return fail('server_error', e.message, 500); }
+
+    await logActivity({
+      userId: session.uid,
+      userName: prodData.storeName || 'Sports Store',
+      action: 'product_deleted',
+      entityType: 'order',
+      entityId: productId,
+      details: `Removed product "${prodData.name}" (${prodData.sport}) from inventory`,
+    });
+
+    return ok({ success: true, productId, productName: prodData.name });
+  } catch (e: any) {
+    console.error('Failed to delete product:', e);
+    return fail('server_error', e.message || 'Failed to delete product', 500);
+  }
 }

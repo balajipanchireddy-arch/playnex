@@ -1,6 +1,7 @@
 import { adminDb } from '@/lib/firebase/admin';
 import { verifySession } from '@/lib/auth/session';
 import { ok, fail } from '@/lib/api/response';
+import { NextRequest } from 'next/server';
 
 async function isAdmin(uid: string) {
   const snap = await adminDb.collection('userRoles')
@@ -140,5 +141,38 @@ export async function GET() {
   } catch (e: any) {
     console.error('Error compiling analytics:', e);
     return fail('server_error', e.message, 500);
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  const session = await verifySession();
+  if (!session) return fail('unauthorized', 'Login required', 401);
+  if (!(await isAdmin(session.uid))) return fail('forbidden', 'Admin access required', 403);
+
+  try {
+    const logsSnap = await adminDb.collection('activityLogs').get();
+    const batchSize = 400;
+    const docs = logsSnap.docs;
+    for (let i = 0; i < docs.length; i += batchSize) {
+      const chunk = docs.slice(i, i + batchSize);
+      const batch = adminDb.batch();
+      chunk.forEach((d: any) => batch.delete(d.ref));
+      await batch.commit();
+    }
+
+    // Keep an initial log noting that logs were pruned
+    await adminDb.collection('activityLogs').add({
+      userId: session.uid,
+      userName: 'Administrator',
+      action: 'logs_pruned',
+      entityType: 'announcement',
+      details: `Administrator pruned ${docs.length} old platform activity logs`,
+      timestamp: Date.now(),
+    });
+
+    return ok({ success: true, count: docs.length });
+  } catch (e: any) {
+    console.error('Failed to clear logs:', e);
+    return fail('server_error', e.message || 'Operation failed', 500);
   }
 }

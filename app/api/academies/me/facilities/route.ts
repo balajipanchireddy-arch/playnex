@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
     const parsed = Body.safeParse(await req.json());
     if (!parsed.success) return fail('invalid', 'Invalid input payload', 400);
     const { name, address, sport, price, image } = parsed.data;
-    
+
     const defaultSlots: Record<string, boolean> = {};
     for (let i = 6; i <= 22; i++) defaultSlots[i.toString()] = true;
 
@@ -132,16 +132,77 @@ export async function DELETE(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const facilityId = searchParams.get('facilityId');
-    if (!productId(facilityId)) return fail('invalid', 'Missing facilityId', 400);
+    if (!facilityId) return fail('invalid', 'Missing facilityId', 400);
 
     const facRef = adminDb.collection('facilities').doc(facilityId);
     const facSnap = await facRef.get();
     if (!facSnap.exists) return fail('not_found', 'Facility not found', 404);
-    if (facSnap.data().academyId !== session.uid) return fail('forbidden', 'Unauthorized to delete this facility', 403);
 
+    const facData = facSnap.data();
+    const canDelete = await isAcademyOrAdmin(session.uid);
+    if (!canDelete || (facData.academyId !== session.uid && !(await (async () => {
+      const snap = await adminDb.collection('userRoles').where('userId', '==', session.uid).where('roleId', '==', 'admin').get();
+      return !snap.empty;
+    })()))) {
+      return fail('forbidden', 'Unauthorized to delete this facility', 403);
+    }
+
+    // Safely check and cancel any active/future bookings for this facility
+    const bookingsSnap = await adminDb.collection('bookings')
+      .where('facilityId', '==', facilityId)
+      .where('status', '==', 'confirmed')
+      .get();
+
+    const affectedUserIds = new Set<string>();
+    if (!bookingsSnap.empty) {
+      const batch = adminDb.batch();
+      bookingsSnap.docs.forEach((bDoc: any) => {
+        batch.update(bDoc.ref, {
+          status: 'cancelled',
+          cancellationReason: 'Ground removed by academy management',
+          cancelledAt: Date.now(),
+        });
+        const uid = bDoc.data().userId;
+        if (uid) affectedUserIds.add(uid);
+      });
+      await batch.commit();
+
+      // Notify affected players
+      for (const uid of Array.from(affectedUserIds)) {
+        await dispatchNotification({
+          title: 'Turf Booking Cancelled',
+          message: `Your booking at ${facData.name} has been cancelled because the venue was removed. Any charges will be processed for refund.`,
+          category: 'academy',
+          targetRole: 'player',
+          targetUserId: uid,
+          link: '/player',
+          senderName: facData.academyName || 'PlayNex Academy',
+          idempotencyKey: `notif_fac_del_${facilityId}_${uid}_${Date.now()}`,
+        });
+      }
+    }
+
+    // Delete the facility document
     await facRef.delete();
-    return ok({ success: true });
-  } catch (e: any) { return fail('server_error', e.message, 500); }
-}
 
-function productId(val: any) { return !!val; }
+    // Log activity
+    await logActivity({
+      userId: session.uid,
+      userName: facData.academyName || 'Academy',
+      action: 'facility_deleted',
+      entityType: 'booking',
+      entityId: facilityId,
+      details: `Removed venue "${facData.name}" (${facData.sport}) and cancelled ${bookingsSnap.size} active booking(s)`,
+    });
+
+    return ok({
+      success: true,
+      facilityId,
+      bookingsCancelled: bookingsSnap.size,
+      playersNotified: affectedUserIds.size
+    });
+  } catch (e: any) {
+    console.error('Failed to delete facility:', e);
+    return fail('server_error', e.message || 'Failed to delete facility', 500);
+  }
+}

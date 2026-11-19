@@ -4,6 +4,7 @@ import { adminDb } from '@/lib/firebase/admin';
 import { verifySession } from '@/lib/auth/session';
 import { ok, fail } from '@/lib/api/response';
 import { dispatchNotification } from '@/lib/notifications/dispatch';
+import { logActivity } from '@/lib/firebase/activity';
 
 async function getUserRoles(uid: string) {
   const snap = await adminDb.collection('userRoles')
@@ -41,19 +42,27 @@ export async function GET() {
     // Read all notifications
     const notifsSnap = await adminDb.collection('notifications').get();
     
-    // Read user's read states
+    // Read user's read states and dismissals
     const readsSnap = await adminDb.collection('notificationReads')
       .where('userId', '==', session.uid)
       .get();
-    const readMap = new Map<string, number>();
+    const readMap = new Map<string, { readAt: number; dismissed?: boolean }>();
     readsSnap.docs.forEach((d: any) => {
-      readMap.set(d.data().notificationId, d.data().readAt);
+      const rData = d.data();
+      readMap.set(rData.notificationId, {
+        readAt: rData.readAt,
+        dismissed: rData.dismissed === true,
+      });
     });
 
     const notifications: any[] = [];
     notifsSnap.docs.forEach((d: any) => {
       const data = d.data();
       const cat = data.category || 'announcement';
+
+      // Check if user previously dismissed this notification
+      const userReadState = readMap.get(d.id);
+      if (userReadState?.dismissed) return;
 
       // 1. Direct User targeting
       if (data.targetUserId) {
@@ -84,8 +93,8 @@ export async function GET() {
       notifications.push({
         id: d.id,
         ...data,
-        read: readMap.has(d.id),
-        readAt: readMap.get(d.id) || null,
+        read: !!userReadState?.readAt,
+        readAt: userReadState?.readAt || null,
       });
     });
 
@@ -140,5 +149,122 @@ export async function POST(req: NextRequest) {
     return ok({ success: true, id: docId }, 201);
   } catch (e: any) {
     return fail('server_error', e.message, 500);
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  const session = await verifySession();
+  if (!session) return fail('unauthorized', 'Login required', 401);
+
+  const { searchParams } = new URL(req.url);
+  const id = searchParams.get('id');
+  const clearAll = searchParams.get('clearAll') === 'true';
+
+  if (!id && !clearAll) {
+    return fail('invalid', 'Provide either "id" or "clearAll=true"', 400);
+  }
+
+  const roles = await getUserRoles(session.uid);
+  const isAdmin = roles.includes('admin');
+
+  try {
+    if (isAdmin) {
+      // ADMIN: Permanently delete announcement(s) from collection
+      if (clearAll) {
+        const notifsSnap = await adminDb.collection('notifications').get();
+        const batchSize = 400;
+        const docs = notifsSnap.docs;
+        for (let i = 0; i < docs.length; i += batchSize) {
+          const chunk = docs.slice(i, i + batchSize);
+          const batch = adminDb.batch();
+          chunk.forEach((d: any) => batch.delete(d.ref));
+          await batch.commit();
+        }
+
+        await logActivity({
+          userId: session.uid,
+          userName: 'Administrator',
+          action: 'announcements_cleared',
+          entityType: 'announcement',
+          details: `Admin cleared all ${docs.length} broadcast announcements`,
+        });
+
+        return ok({ success: true, count: docs.length, clearedAll: true });
+      }
+
+      if (id) {
+        const docRef = adminDb.collection('notifications').doc(id);
+        const docSnap = await docRef.get();
+        if (!docSnap.exists) {
+          return fail('not_found', 'Announcement not found', 404);
+        }
+        const existingData = docSnap.data();
+        await docRef.delete();
+
+        // Also clean up any associated notificationReads
+        const readsSnap = await adminDb.collection('notificationReads')
+          .where('notificationId', '==', id)
+          .get();
+        if (!readsSnap.empty) {
+          const batch = adminDb.batch();
+          readsSnap.docs.forEach((d: any) => batch.delete(d.ref));
+          await batch.commit();
+        }
+
+        await logActivity({
+          userId: session.uid,
+          userName: 'Administrator',
+          action: 'announcement_deleted',
+          entityType: 'announcement',
+          entityId: id,
+          details: `Deleted announcement "${existingData?.title || id}"`,
+        });
+
+        return ok({ success: true, deletedId: id });
+      }
+    } else {
+      // USER: Dismiss notification(s) for the current user
+      if (clearAll) {
+        const notifsSnap = await adminDb.collection('notifications').get();
+        const batch = adminDb.batch();
+        const now = Date.now();
+        notifsSnap.docs.forEach((d: any) => {
+          const readRef = adminDb.collection('notificationReads').doc(`${d.id}_${session.uid}`);
+          batch.set(readRef, {
+            notificationId: d.id,
+            userId: session.uid,
+            dismissed: true,
+            dismissedAt: now,
+          }, { merge: true });
+        });
+        await batch.commit();
+
+        return ok({ success: true, clearedAll: true });
+      }
+
+      if (id) {
+        const docRef = adminDb.collection('notifications').doc(id);
+        const docSnap = await docRef.get();
+        if (docSnap.exists && docSnap.data()?.targetUserId === session.uid) {
+          // If targeted directly to this specific user, we can permanently delete
+          await docRef.delete();
+        } else {
+          // If broadcast/role notification, mark dismissed for this user
+          await adminDb.collection('notificationReads').doc(`${id}_${session.uid}`).set({
+            notificationId: id,
+            userId: session.uid,
+            dismissed: true,
+            dismissedAt: Date.now(),
+          }, { merge: true });
+        }
+
+        return ok({ success: true, dismissedId: id });
+      }
+    }
+
+    return fail('invalid', 'Request not handled', 400);
+  } catch (e: any) {
+    console.error('Failed to delete/dismiss notification:', e);
+    return fail('server_error', e.message || 'Operation failed', 500);
   }
 }

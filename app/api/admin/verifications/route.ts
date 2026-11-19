@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { adminDb } from '@/lib/firebase/admin';
 import { verifySession } from '@/lib/auth/session';
 import { ok, fail } from '@/lib/api/response';
+import { logActivity } from '@/lib/firebase/activity';
 
 async function isAdmin(uid: string) {
   const snap = await adminDb.collection('userRoles').where('userId', '==', uid).where('roleId', '==', 'admin').get();
@@ -89,5 +90,50 @@ export async function POST(req: NextRequest) {
   } catch (e: any) { 
     console.error('Verification review error:', e);
     return fail('server_error', e.message, 500); 
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  const session = await verifySession();
+  if (!session) return fail('unauthorized', 'Login required', 401);
+  if (!(await isAdmin(session.uid))) return fail('forbidden', 'Admin access required', 403);
+
+  const { searchParams } = new URL(req.url);
+  const id = searchParams.get('id');
+  const type = searchParams.get('type') as 'store' | 'academy';
+
+  if (!id || !type || !['store', 'academy'].includes(type)) {
+    return fail('invalid', 'Valid "id" and "type" (store | academy) are required', 400);
+  }
+
+  try {
+    const collection = type === 'store' ? 'stores' : 'academies';
+    const docRef = adminDb.collection(collection).doc(id);
+    const snap = await docRef.get();
+    if (!snap.exists) return fail('not_found', 'Partner record not found', 404);
+
+    const data = snap.data();
+    const partnerName = type === 'store' ? (data?.storeName || 'Store') : (data?.academyName || 'Academy');
+
+    // Soft delete/dismiss the verification request
+    await docRef.set({
+      verificationStatus: 'dismissed',
+      dismissedAt: Date.now(),
+      dismissedBy: session.uid,
+    }, { merge: true });
+
+    await logActivity({
+      userId: session.uid,
+      userName: 'Administrator',
+      action: 'verification_dismissed',
+      entityType: 'verification',
+      entityId: id,
+      details: `Dismissed ${type} application for "${partnerName}"`,
+    });
+
+    return ok({ success: true, id, type, status: 'dismissed' });
+  } catch (e: any) {
+    console.error('Failed to dismiss verification:', e);
+    return fail('server_error', e.message || 'Operation failed', 500);
   }
 }
