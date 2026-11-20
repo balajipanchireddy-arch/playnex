@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { adminDb } from '@/lib/firebase/admin';
 import { verifySession } from '@/lib/auth/session';
+import { isAdmin } from '@/lib/auth/admin';
 import { ok, fail } from '@/lib/api/response';
 import { dispatchNotification } from '@/lib/notifications/dispatch';
 import { logActivity } from '@/lib/firebase/activity';
@@ -25,6 +26,21 @@ async function isAcademyOrAdmin(uid: string) {
   return roles.includes('admin') || roles.includes('academy');
 }
 
+async function isApprovedAcademy(uid: string): Promise<boolean> {
+  const roleSnap = await adminDb.collection('userRoles')
+    .where('userId', '==', uid)
+    .where('roleId', '==', 'academy')
+    .where('status', '==', 'active')
+    .limit(1)
+    .get();
+
+  if (roleSnap.empty) return false;
+
+  const academyDoc = await adminDb.collection('academies').doc(uid).get();
+  return academyDoc.exists &&
+    academyDoc.data()?.verificationStatus === 'approved';
+}
+
 export async function GET() {
   const session = await verifySession();
   if (!session) return fail('unauthorized', 'Login required', 401);
@@ -39,8 +55,9 @@ export async function POST(req: NextRequest) {
   const session = await verifySession();
   if (!session) return fail('unauthorized', 'Login required', 401);
 
-  if (!(await isAcademyOrAdmin(session.uid))) {
-    return fail('forbidden', 'Academy operator permissions required', 403);
+  const adminUser = await isAdmin(session.uid);
+  if (!adminUser && !(await isApprovedAcademy(session.uid))) {
+    return fail('forbidden', 'Your academy must be approved by PlayNex Admin before adding grounds.', 403);
   }
 
   try {
@@ -110,6 +127,12 @@ const PatchBody = z.object({
 export async function PATCH(req: NextRequest) {
   const session = await verifySession();
   if (!session) return fail('unauthorized', 'Login required', 401);
+
+  const adminUser = await isAdmin(session.uid);
+  if (!adminUser && !(await isApprovedAcademy(session.uid))) {
+    return fail('forbidden', 'Your academy must be approved by PlayNex Admin before editing grounds.', 403);
+  }
+
   try {
     const parsed = PatchBody.safeParse(await req.json());
     if (!parsed.success) return fail('invalid', 'Invalid input payload', 400);
@@ -144,10 +167,8 @@ export async function DELETE(req: NextRequest) {
 
     const facData = facSnap.data();
     const canDelete = await isAcademyOrAdmin(session.uid);
-    if (!canDelete || (facData.academyId !== session.uid && !(await (async () => {
-      const snap = await adminDb.collection('userRoles').where('userId', '==', session.uid).where('roleId', '==', 'admin').get();
-      return !snap.empty;
-    })()))) {
+    const adminUser = await isAdmin(session.uid);
+    if (!canDelete || (facData.academyId !== session.uid && !adminUser)) {
       return fail('forbidden', 'Unauthorized to delete this facility', 403);
     }
 

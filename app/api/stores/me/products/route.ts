@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { adminDb } from '@/lib/firebase/admin';
 import { verifySession } from '@/lib/auth/session';
+import { isAdmin } from '@/lib/auth/admin';
 import { ok, fail } from '@/lib/api/response';
 import { dispatchNotification } from '@/lib/notifications/dispatch';
 import { logActivity } from '@/lib/firebase/activity';
@@ -25,6 +26,21 @@ async function isStoreOrAdmin(uid: string) {
   return roles.includes('admin') || roles.includes('store');
 }
 
+async function isApprovedStore(uid: string): Promise<boolean> {
+  const roleSnap = await adminDb.collection('userRoles')
+    .where('userId', '==', uid)
+    .where('roleId', '==', 'store')
+    .where('status', '==', 'active')
+    .limit(1)
+    .get();
+
+  if (roleSnap.empty) return false;
+
+  const storeDoc = await adminDb.collection('stores').doc(uid).get();
+  return storeDoc.exists &&
+    storeDoc.data()?.verificationStatus === 'approved';
+}
+
 export async function GET() {
   const session = await verifySession();
   if (!session) return fail('unauthorized', 'Login required', 401);
@@ -38,8 +54,9 @@ export async function POST(req: NextRequest) {
   const session = await verifySession();
   if (!session) return fail('unauthorized', 'Login required', 401);
 
-  if (!(await isStoreOrAdmin(session.uid))) {
-    return fail('forbidden', 'Sports store partner permissions required', 403);
+  const adminUser = await isAdmin(session.uid);
+  if (!adminUser && !(await isApprovedStore(session.uid))) {
+    return fail('forbidden', 'Your store must be approved by PlayNex Admin before adding products.', 403);
   }
 
   try {
@@ -102,6 +119,12 @@ const PatchBody = z.object({
 export async function PATCH(req: NextRequest) {
   const session = await verifySession();
   if (!session) return fail('unauthorized', 'Login required', 401);
+
+  const adminUser = await isAdmin(session.uid);
+  if (!adminUser && !(await isApprovedStore(session.uid))) {
+    return fail('forbidden', 'Your store must be approved by PlayNex Admin before editing products.', 403);
+  }
+
   try {
     const parsed = PatchBody.safeParse(await req.json());
     if (!parsed.success) return fail('invalid', 'Invalid input payload', 400);
@@ -151,10 +174,8 @@ export async function DELETE(req: NextRequest) {
 
     const prodData = prodSnap.data();
     const canDelete = await isStoreOrAdmin(session.uid);
-    if (!canDelete || (prodData.storeId !== session.uid && !(await (async () => {
-      const snap = await adminDb.collection('userRoles').where('userId', '==', session.uid).where('roleId', '==', 'admin').get();
-      return !snap.empty;
-    })()))) {
+    const adminUser = await isAdmin(session.uid);
+    if (!canDelete || (prodData.storeId !== session.uid && !adminUser)) {
       return fail('forbidden', 'Unauthorized to delete this product', 403);
     }
 

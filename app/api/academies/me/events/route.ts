@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { adminDb } from '@/lib/firebase/admin';
 import { verifySession } from '@/lib/auth/session';
+import { isAdmin } from '@/lib/auth/admin';
 import { ok, fail } from '@/lib/api/response';
 import { logActivity } from '@/lib/firebase/activity';
 import { dispatchNotification } from '@/lib/notifications/dispatch';
@@ -43,6 +44,21 @@ async function isAcademyOrAdmin(uid: string) {
   return roles.includes('admin') || roles.includes('academy');
 }
 
+async function isApprovedAcademy(uid: string): Promise<boolean> {
+  const roleSnap = await adminDb.collection('userRoles')
+    .where('userId', '==', uid)
+    .where('roleId', '==', 'academy')
+    .where('status', '==', 'active')
+    .limit(1)
+    .get();
+
+  if (roleSnap.empty) return false;
+
+  const academyDoc = await adminDb.collection('academies').doc(uid).get();
+  return academyDoc.exists &&
+    academyDoc.data()?.verificationStatus === 'approved';
+}
+
 /** GET – list events owned by the academy of the logged‑in user */
 export async function GET() {
   const session = await verifySession();
@@ -65,8 +81,9 @@ export async function POST(req: NextRequest) {
   const session = await verifySession();
   if (!session) return fail('unauthorized', 'Login required', 401);
 
-  if (!(await isAcademyOrAdmin(session.uid))) {
-    return fail('forbidden', 'Academy operator permissions required', 403);
+  const adminUser = await isAdmin(session.uid);
+  if (!adminUser && !(await isApprovedAcademy(session.uid))) {
+    return fail('forbidden', 'Your academy must be approved by PlayNex Admin before creating tournaments.', 403);
   }
 
   try {
@@ -160,7 +177,7 @@ export async function DELETE(req: NextRequest) {
 
     const existing = doc.data();
     // Ensure the caller owns the event or is an admin
-    if (existing.academyId !== session.uid && !(await isAcademyOrAdmin(session.uid))) {
+    if (existing.academyId !== session.uid && !(await isAdmin(session.uid))) {
       return fail('forbidden', 'Not authorized to delete this event', 403);
     }
 
