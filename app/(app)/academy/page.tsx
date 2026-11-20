@@ -349,7 +349,7 @@ export default function AcademyDashboard() {
               }}
               className="btn btn-sm btn-secondary text-xs"
             >
-              <img src="/icons/tournament.jpg" alt="Tournament" className="w-full h-full object-cover" /> Host Tournament
+              Host Tournament
             </button>
           </div>
         </div>
