@@ -1,16 +1,10 @@
 import { NextRequest } from 'next/server';
-import { adminDb } from '@/lib/firebase/admin';
+import { adminAuth, adminDb } from '@/lib/firebase/admin';
 import { verifySession } from '@/lib/auth/session';
+import { isAdmin, isSuperAdmin } from '@/lib/auth/admin';
 import { ok, fail } from '@/lib/api/response';
 import { logActivity } from '@/lib/firebase/activity';
 
-async function isAdmin(uid: string) {
-  const snap = await adminDb.collection('userRoles')
-    .where('userId', '==', uid)
-    .where('roleId', '==', 'admin')
-    .get();
-  return !snap.empty;
-}
 
 export async function GET() {
   const session = await verifySession();
@@ -76,25 +70,54 @@ export async function DELETE(req: NextRequest) {
     }
     const userData = userSnap.data();
 
-    // Prevent deleting another active admin account unless explicitly intended
+    // Only the trusted Super Admin may permanently delete accounts or manage other admins.
+    const actorIsSuperAdmin = await isSuperAdmin(session.uid);
+    const targetIsSuperAdmin = await isSuperAdmin(userId);
+
+    if (targetIsSuperAdmin) {
+      return fail('forbidden', 'The trusted Super Admin account cannot be deleted or suspended', 403);
+    }
+
+    if (permanent && !actorIsSuperAdmin) {
+      return fail('forbidden', 'Only the Super Admin can permanently delete user accounts', 403);
+    }
+
     const targetRolesSnap = await adminDb.collection('userRoles')
       .where('userId', '==', userId)
       .where('roleId', '==', 'admin')
       .where('status', '==', 'active')
       .get();
-    if (!targetRolesSnap.empty && !permanent) {
-      return fail('forbidden', 'Cannot suspend an active administrator account', 403);
+
+    if (!targetRolesSnap.empty && !actorIsSuperAdmin) {
+      return fail('forbidden', 'Only the Super Admin can manage another active administrator', 403);
     }
 
     if (permanent) {
-      // PERMANENT PURGE: Delete user document, profile, and roles
-      const batch = adminDb.batch();
-      batch.delete(userRef);
-      batch.delete(adminDb.collection('playerProfiles').doc(userId));
+      // Delete Firebase Authentication account first.
+      try {
+        await adminAuth.deleteUser(userId);
+      } catch (authError: any) {
+        if (authError?.code !== 'auth/user-not-found') throw authError;
+      }
 
-      const rolesSnap = await adminDb.collection('userRoles').where('userId', '==', userId).get();
-      rolesSnap.docs.forEach((d: any) => batch.delete(d.ref));
-      await batch.commit();
+      const rolesSnap = await adminDb.collection('userRoles')
+        .where('userId', '==', userId)
+        .get();
+
+      // Keep Firestore batches below the 500-operation limit.
+      const firstBatch = adminDb.batch();
+      firstBatch.delete(userRef);
+      firstBatch.delete(adminDb.collection('playerProfiles').doc(userId));
+      firstBatch.delete(adminDb.collection('stores').doc(userId));
+      firstBatch.delete(adminDb.collection('academies').doc(userId));
+      firstBatch.delete(adminDb.collection('staffProfiles').doc(userId));
+      await firstBatch.commit();
+
+      for (let i = 0; i < rolesSnap.docs.length; i += 400) {
+        const batch = adminDb.batch();
+        rolesSnap.docs.slice(i, i + 400).forEach((d: any) => batch.delete(d.ref));
+        await batch.commit();
+      }
 
       await logActivity({
         userId: session.uid,
@@ -116,9 +139,9 @@ export async function DELETE(req: NextRequest) {
 
       // Deactivate all role bindings
       const rolesSnap = await adminDb.collection('userRoles').where('userId', '==', userId).get();
-      if (!rolesSnap.empty) {
+      for (let i = 0; i < rolesSnap.docs.length; i += 400) {
         const batch = adminDb.batch();
-        rolesSnap.docs.forEach((d: any) => {
+        rolesSnap.docs.slice(i, i + 400).forEach((d: any) => {
           batch.update(d.ref, { status: 'suspended' });
         });
         await batch.commit();

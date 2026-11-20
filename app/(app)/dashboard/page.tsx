@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { verifySession } from '@/lib/auth/session';
 import { adminDb } from '@/lib/firebase/admin';
+import { isSuperAdmin } from '@/lib/auth/admin';
 import { 
   Trophy, 
   Landmark, 
@@ -9,7 +10,8 @@ import {
   ShieldCheck, 
   ArrowRight, 
   Sparkles,
-  HelpCircle
+  HelpCircle,
+  ClipboardCheck
 } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
@@ -31,6 +33,14 @@ const ROLE_DETAILS: Record<string, RoleConfig> = {
     icon: Trophy,
     iconBg: 'bg-blue-50 text-blue-600',
     badge: 'ATHLETE',
+  },
+  staff: {
+    title: 'Staff Operations',
+    desc: 'On-ground athlete check-ins, arena facility oversight, and real-time slot monitoring.',
+    href: '/staff',
+    icon: ClipboardCheck,
+    iconBg: 'bg-teal-50 text-teal-700',
+    badge: 'STAFF',
   },
   academy: {
     title: 'Academy & Venues',
@@ -62,6 +72,11 @@ export default async function DashboardPage() {
   const session = await verifySession();
   if (!session) redirect('/login');
 
+  // Super Admin is identified using the trusted Firebase UID.
+  if (await isSuperAdmin(session.uid)) {
+    redirect('/admin');
+  }
+
   const rolesSnap = await adminDb
     .collection('userRoles')
     .where('userId', '==', session.uid)
@@ -69,7 +84,7 @@ export default async function DashboardPage() {
     .get();
 
   const rawRoles = rolesSnap.docs.map((d: any) => d.data().roleId as string);
-  const roles = rawRoles.filter((r: string) => r !== 'staff');
+  const roles = rawRoles;
 
   if (!roles.length) {
     return (

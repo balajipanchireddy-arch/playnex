@@ -2,13 +2,10 @@ import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { adminDb } from '@/lib/firebase/admin';
 import { verifySession } from '@/lib/auth/session';
+import { isAdmin } from '@/lib/auth/admin';
 import { ok, fail } from '@/lib/api/response';
 import { logActivity } from '@/lib/firebase/activity';
 
-async function isAdmin(uid: string) {
-  const snap = await adminDb.collection('userRoles').where('userId', '==', uid).where('roleId', '==', 'admin').get();
-  return !snap.empty;
-}
 
 export async function GET() {
   const session = await verifySession();

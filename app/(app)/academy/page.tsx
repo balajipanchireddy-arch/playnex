@@ -3,6 +3,7 @@
 import DeleteConfirmModal from '@/components/DeleteConfirmModal';
 import { useState, useEffect } from 'react';
 import { uploadImage } from '@/lib/utils/upload';
+import Toast from '@/components/ui/Toast';
 import {
   Landmark,
   Trophy,
@@ -36,9 +37,12 @@ export default function AcademyDashboard() {
   // Ground Form State
   const [name, setName] = useState('');
   const [address, setAddress] = useState('');
+  const [description, setDescription] = useState('');
+  const [contact, setContact] = useState('');
   const [sport, setSport] = useState('Basketball');
   const [price, setPrice] = useState('');
   const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imageUrlInput, setImageUrlInput] = useState('');
   const [submittingGround, setSubmittingGround] = useState(false);
   const [showAddGround, setShowAddGround] = useState(false);
 
@@ -120,9 +124,9 @@ export default function AcademyDashboard() {
   async function handleAddFacility(e: React.FormEvent) {
     e.preventDefault();
     setSubmittingGround(true);
-    let imageUrl = '';
+    let imageUrl = imageUrlInput.trim();
     try {
-      if (imageFile) {
+      if (!imageUrl && imageFile) {
         imageUrl = await uploadImage(imageFile, 'academies');
       }
       const res = await fetch('/api/academies/me/facilities', {
@@ -130,7 +134,9 @@ export default function AcademyDashboard() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name,
-          address,
+          address: address.trim(),
+          description: description.trim(),
+          contact: contact.trim(),
           sport,
           price: Number(price),
           image: imageUrl,
@@ -141,8 +147,11 @@ export default function AcademyDashboard() {
         notify('ok', `Added ${name} to your venues!`);
         setName('');
         setAddress('');
+        setDescription('');
+        setContact('');
         setPrice('');
         setImageFile(null);
+        setImageUrlInput('');
         setShowAddGround(false);
         await loadData();
       } else {
@@ -287,28 +296,7 @@ export default function AcademyDashboard() {
   return (
     <div className="space-y-8 relative">
       {/* Toast Notification */}
-      {notification && (
-        <div
-          className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-2xl px-5 py-3.5 shadow-2xl border backdrop-blur-md animate-in slide-in-from-bottom duration-200 ${
-            notification.type === 'ok'
-              ? 'bg-emerald-900/90 text-white border-emerald-700/80'
-              : 'bg-rose-900/90 text-white border-rose-700/80'
-          }`}
-        >
-          {notification.type === 'ok' ? (
-            <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0" />
-          ) : (
-            <AlertCircle className="h-5 w-5 text-rose-400 shrink-0" />
-          )}
-          <span className="text-xs font-semibold">{notification.text}</span>
-          <button
-            onClick={() => setNotification(null)}
-            className="ml-2 rounded-lg p-1 text-white/60 hover:text-white"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      )}
+      <Toast message={notification} onClose={() => setNotification(null)} />
 
       {/* Hero Overview Header */}
       <div className="card bg-white text-[#172033] border-[#E2E8F0] p-6 sm:p-8 relative overflow-hidden shadow-sm">
@@ -414,7 +402,7 @@ export default function AcademyDashboard() {
           </div>
           <form onSubmit={handleAddFacility} className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="label">Ground Name</label>
+              <label className="label">Ground Name *</label>
               <input
                 required
                 value={name}
@@ -424,9 +412,8 @@ export default function AcademyDashboard() {
               />
             </div>
             <div>
-              <label className="label">Full Address / Location</label>
+              <label className="label">Full Address / Location (Optional)</label>
               <input
-                required
                 value={address}
                 onChange={(e) => setAddress(e.target.value)}
                 className="input"
@@ -434,7 +421,7 @@ export default function AcademyDashboard() {
               />
             </div>
             <div>
-              <label className="label">Sport Category</label>
+              <label className="label">Sport Category *</label>
               <select
                 value={sport}
                 onChange={(e) => setSport(e.target.value)}
@@ -447,7 +434,7 @@ export default function AcademyDashboard() {
               </select>
             </div>
             <div>
-              <label className="label">Hourly Price (₹/hr)</label>
+              <label className="label">Hourly Price (₹/hr) *</label>
               <input
                 type="number"
                 required
@@ -458,29 +445,58 @@ export default function AcademyDashboard() {
                 placeholder="e.g. 800"
               />
             </div>
+            <div>
+              <label className="label">Contact / Phone (Optional)</label>
+              <input
+                value={contact}
+                onChange={(e) => setContact(e.target.value)}
+                className="input"
+                placeholder="e.g. +91 98765 43210"
+              />
+            </div>
+            <div className="md:col-span-2">
+              <label className="label">Description / Amenities (Optional)</label>
+              <textarea
+                rows={2}
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                className="input"
+                placeholder="Synthetic turf, LED floodlights, changing rooms, drinking water..."
+              />
+            </div>
             <div className="md:col-span-2">
               <label className="label">Ground Photo (Optional)</label>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-col gap-2">
                 <input
                   type="file"
                   accept="image/*"
                   onChange={(e) => setImageFile(e.target.files?.[0] || null)}
                   className="input file:mr-3 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-brand-50 file:text-brand-700"
                 />
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-400 font-semibold uppercase">Or</span>
+                  <input
+                    type="url"
+                    value={imageUrlInput}
+                    onChange={(e) => setImageUrlInput(e.target.value)}
+                    className="input text-xs"
+                    placeholder="Paste direct Image URL (e.g. https://images.unsplash.com/...)"
+                  />
+                </div>
               </div>
             </div>
-            <div className="md:col-span-2 flex justify-end gap-2 mt-2">
+            <div className="md:col-span-2 flex flex-col sm:flex-row justify-end gap-2 mt-2">
               <button
                 type="button"
                 onClick={() => setShowAddGround(false)}
-                className="btn btn-secondary text-xs"
+                className="btn btn-secondary text-xs w-full sm:w-auto"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={submittingGround}
-                className="btn btn-emerald text-xs"
+                className="btn btn-emerald text-xs w-full sm:w-auto"
               >
                 {submittingGround ? 'Saving Venue...' : 'Add Ground'}
               </button>
@@ -684,16 +700,24 @@ export default function AcademyDashboard() {
                      </div>
                     )}
                     <div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <h3 className="font-extrabold text-lg text-slate-900">{f.name}</h3>
                         <span className="badge badge-brand text-[10px]">{f.sport}</span>
                         {f.closed && (
                           <span className="badge badge-bad text-[10px]">Temporarily Closed</span>
                         )}
-                     </div>
-                      <p className="text-xs text-slate-500 mt-1 flex items-center gap-1">
-                        <MapPin className="h-3.5 w-3.5 text-slate-400" /> {f.address}
-                      </p>
+                      </div>
+                      {f.address && (
+                        <p className="text-xs text-slate-500 mt-1 flex items-center gap-1">
+                          <MapPin className="h-3.5 w-3.5 text-slate-400 shrink-0" /> {f.address}
+                        </p>
+                      )}
+                      {f.description && (
+                        <p className="text-xs text-slate-600 mt-1 line-clamp-2">{f.description}</p>
+                      )}
+                      {f.contact && (
+                        <p className="text-[11px] text-slate-400 mt-0.5">Contact: {f.contact}</p>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-3 flex-wrap">

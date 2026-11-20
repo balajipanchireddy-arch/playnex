@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import Toast from '@/components/ui/Toast';
 import {
   LayoutDashboard,
   Users,
@@ -35,7 +36,10 @@ import {
   FileText,
   AlertTriangle,
   Loader2,
-  Gamepad2
+  Gamepad2,
+  Database,
+  ShieldAlert,
+  RefreshCw
 } from 'lucide-react';
 import DeleteConfirmModal from '@/components/DeleteConfirmModal';
 
@@ -49,6 +53,7 @@ type SidebarTab =
   | 'games'
   | 'matches'
   | 'notifications'
+  | 'system'
   | 'analytics'
   | 'activity'
   | 'settings';
@@ -103,6 +108,17 @@ export default function AdminDashboard() {
   // Announcement Form State
   const [notifTitle, setNotifTitle] = useState('');
   const [notifMessage, setNotifMessage] = useState('');
+
+  // System Management State
+  const [systemCounts, setSystemCounts] = useState<any>(null);
+  const [loadingSystemCounts, setLoadingSystemCounts] = useState(false);
+  const [selectedSystemCategories, setSelectedSystemCategories] = useState<string[]>([]);
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [resetConfirmInput, setResetConfirmInput] = useState('');
+  const [secondConfirm, setSecondConfirm] = useState(false);
+  const [resetSubmitting, setResetSubmitting] = useState(false);
+  const [cleaningNotifs, setCleaningNotifs] = useState(false);
+  const [selectiveDeleting, setSelectiveDeleting] = useState(false);
   const [notifCategory, setNotifCategory] = useState<'announcement' | 'tournament' | 'system'>('announcement');
   const [notifRole, setNotifRole] = useState<'all' | 'player' | 'academy' | 'store'>('all');
   const [notifSport, setNotifSport] = useState<string>('All');
@@ -157,6 +173,120 @@ export default function AdminDashboard() {
   useEffect(() => {
     loadAdminData();
   }, []);
+
+  useEffect(() => {
+    if (activeTab === 'system' && !systemCounts) {
+      loadSystemCounts();
+    }
+  }, [activeTab]);
+
+  async function loadSystemCounts() {
+    setLoadingSystemCounts(true);
+    try {
+      const res = await fetch('/api/admin/system');
+      const data = await res.json();
+      if (data.ok) setSystemCounts(data.data?.counts);
+    } catch {
+      notify('err', 'Could not load system collection counts.');
+    } finally {
+      setLoadingSystemCounts(false);
+    }
+  }
+
+  async function handleNotificationCleanup() {
+    setCleaningNotifs(true);
+    try {
+      const res = await fetch('/api/admin/notifications/cleanup', { method: 'POST' });
+      const data = await res.json();
+      if (data.ok) {
+        notify('ok', `Cleaned up ${data.data?.deleted || 0} expired notifications (>30 days).`);
+        await loadSystemCounts();
+        await loadAdminData();
+      } else {
+        notify('err', data.error?.message || 'Failed to cleanup notifications.');
+      }
+    } catch {
+      notify('err', 'Network error during notification cleanup.');
+    } finally {
+      setCleaningNotifs(false);
+    }
+  }
+
+  async function handleClearAllAnnouncements() {
+    if (!confirm('Clear all announcements? This will permanently delete broadcast alerts.')) return;
+    try {
+      const res = await fetch('/api/notifications?clearAll=true&admin=true', { method: 'DELETE' });
+      const data = await res.json();
+      if (data.ok) {
+        notify('ok', 'All announcements cleared.');
+        await loadAdminData();
+      } else {
+        notify('err', data.error?.message || 'Failed to clear announcements.');
+      }
+    } catch {
+      notify('err', 'Network error.');
+    }
+  }
+
+  async function handleSelectiveDelete() {
+    if (selectedSystemCategories.length === 0) return;
+    if (!confirm(`Are you sure you want to permanently delete records for: ${selectedSystemCategories.join(', ')}? This action cannot be undone.`)) return;
+    setSelectiveDeleting(true);
+    try {
+      const res = await fetch('/api/admin/system', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ categories: selectedSystemCategories }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        notify('ok', `Deleted records for: ${selectedSystemCategories.join(', ')}.`);
+        setSelectedSystemCategories([]);
+        await loadSystemCounts();
+        await loadAdminData();
+      } else {
+        notify('err', data.error?.message || 'Selective deletion failed.');
+      }
+    } catch {
+      notify('err', 'Network error during deletion.');
+    } finally {
+      setSelectiveDeleting(false);
+    }
+  }
+
+  async function handleCompleteReset() {
+    if (resetConfirmInput !== 'DELETE ALL DATA') {
+      notify('err', 'You must type "DELETE ALL DATA" exactly.');
+      return;
+    }
+    if (!secondConfirm) {
+      setSecondConfirm(true);
+      return;
+    }
+    setResetSubmitting(true);
+    try {
+      const res = await fetch('/api/admin/system', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm: 'DELETE ALL DATA' }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        notify('ok', 'All operational data has been successfully reset. Admin and core settings preserved.');
+        setShowResetModal(false);
+        setResetConfirmInput('');
+        setSecondConfirm(false);
+        await loadSystemCounts();
+        await loadAdminData();
+      } else {
+        notify('err', data.error?.message || 'Operational reset failed.');
+      }
+    } catch {
+      notify('err', 'Network error during reset.');
+    } finally {
+      setResetSubmitting(false);
+    }
+  }
 
   async function handleCreateTournament(e: React.FormEvent) {
     e.preventDefault();
@@ -454,34 +584,16 @@ export default function AdminDashboard() {
     { id: 'stores', label: 'Stores', icon: ShoppingBag, badge: analytics?.totals?.stores },
     { id: 'matches', label: 'Matches', icon: Calendar },
     { id: 'notifications', label: 'Notifications', icon: Bell, badge: allNotifications.length },
+    { id: 'system', label: 'System Management', icon: Database },
     { id: 'analytics', label: 'Analytics', icon: BarChart3 },
     { id: 'activity', label: 'Activity Logs', icon: History },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
   return (
-    <div className="min-h-screen bg-[#0B0F19] text-slate-100 -mt-8 sm:-mt-10 -mx-4 sm:-mx-6 lg:-mx-8 p-4 sm:p-6 lg:p-8">
+    <div className="min-h-screen bg-[#F5F7FA] text-[#172033] -mt-8 sm:-mt-10 -mx-4 sm:-mx-6 lg:-mx-8 p-4 sm:p-6 lg:p-8">
       {/* Toast Notification */}
-      {notification && (
-        <div className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-2xl px-5 py-3.5 shadow-2xl border backdrop-blur-md animate-in slide-in-from-bottom duration-200 ${
-          notification.type === 'ok'
-            ? 'bg-emerald-950/90 text-white border-emerald-700/80'
-            : 'bg-rose-950/90 text-white border-rose-700/80'
-        }`}>
-          {notification.type === 'ok' ? (
-            <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0" />
-          ) : (
-            <AlertCircle className="h-5 w-5 text-rose-400 shrink-0" />
-          )}
-          <span className="text-xs font-semibold">{notification.text}</span>
-          <button
-            onClick={() => setNotification(null)}
-            className="ml-2 rounded-lg p-1 text-white/60 hover:text-white"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      )}
+      <Toast message={notification} onClose={() => setNotification(null)} />
 
       {/* Top Header Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-6 mb-6 border-b border-[#E2E8F0] gap-4">
@@ -1035,18 +1147,29 @@ export default function AdminDashboard() {
           {/* TAB 4: NOTIFICATIONS & ANNOUNCEMENTS */}
           {activeTab === 'notifications' && (
             <div className="space-y-6 animate-in fade-in duration-200">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                   <h2 className="text-lg font-black text-[#172033]">Platform Announcements ({allNotifications.length})</h2>
-                  <p className="text-xs text-slate-400">Broadcast updates to all players, specific sports, academies, or stores.</p>
+                  <p className="text-xs text-slate-500">Broadcast updates to all players, specific sports, academies, or stores.</p>
                 </div>
-                <button
-                  onClick={() => setShowSendAnnouncement(true)}
-                  className="btn btn-sm text-xs bg-brand-600 hover:bg-brand-500 text-white border-0 flex items-center gap-1.5"
-                >
-                  <Send className="h-3.5 w-3.5" />
-                  Broadcast Alert
-                </button>
+                <div className="flex items-center gap-2">
+                  {allNotifications.length > 0 && (
+                    <button
+                      onClick={handleClearAllAnnouncements}
+                      className="btn btn-sm text-xs bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 flex items-center gap-1.5"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Clear All
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setShowSendAnnouncement(true)}
+                    className="btn btn-sm text-xs bg-brand-600 hover:bg-brand-500 text-white border-0 flex items-center gap-1.5"
+                  >
+                    <Send className="h-3.5 w-3.5" />
+                    Broadcast Alert
+                  </button>
+                </div>
               </div>
 
               <div className="bg-white border border-[#E2E8F0] shadow-sm rounded-2xl divide-y divide-slate-100">
@@ -1057,22 +1180,172 @@ export default function AdminDashboard() {
                     <div key={n.id} className="p-4 flex items-start justify-between gap-4">
                       <div>
                         <div className="flex items-center gap-2 mb-1">
-                          <span className="badge bg-purple-500/20 text-purple-300 border-purple-500/30 text-[10px] uppercase font-black">
+                          <span className="badge bg-purple-50 text-purple-700 border border-purple-200 text-[10px] uppercase font-black">
                             Audience: {n.targetRole || 'all'} {n.targetSport ? `(${n.targetSport})` : ''}
                           </span>
-                          <span className="badge bg-slate-800 text-slate-300 text-[10px]">
+                          <span className="badge bg-slate-100 text-slate-700 border border-slate-200 text-[10px]">
                             {n.category || 'System'}
                           </span>
                         </div>
                         <h4 className="text-xs font-bold text-[#172033]">{n.title}</h4>
-                        <p className="text-xs text-slate-400 mt-0.5">{n.message}</p>
+                        <p className="text-xs text-slate-500 mt-0.5">{n.message}</p>
                       </div>
-                      <span className="text-[10px] text-slate-500 shrink-0 font-mono">
+                      <span className="text-[10px] text-slate-400 shrink-0 font-mono">
                         {n.createdAt ? new Date(n.createdAt).toLocaleDateString() : ''}
                       </span>
                     </div>
                   ))
                 )}
+              </div>
+            </div>
+          )}
+
+          {/* TAB: SYSTEM MANAGEMENT & DATA RESET */}
+          {activeTab === 'system' && (
+            <div className="space-y-6 animate-in fade-in duration-200">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-lg font-black text-[#172033] flex items-center gap-2">
+                    <Database className="h-5 w-5 text-purple-600" />
+                    System Management & Selective Deletion
+                  </h2>
+                  <p className="text-xs text-slate-500">
+                    Inspect operational collections, perform selective cascading deletions, or execute controlled system resets.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    onClick={loadSystemCounts}
+                    disabled={loadingSystemCounts}
+                    className="btn btn-secondary btn-sm text-xs flex items-center gap-1.5"
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 ${loadingSystemCounts ? 'animate-spin' : ''}`} />
+                    Refresh
+                  </button>
+                  <button
+                    onClick={handleNotificationCleanup}
+                    disabled={cleaningNotifs}
+                    className="btn btn-sm btn-secondary text-xs flex items-center gap-1.5"
+                    title="Purge notifications older than 30 days"
+                  >
+                    <Clock className="h-3.5 w-3.5 text-amber-600" />
+                    {cleaningNotifs ? 'Purging...' : '30-Day Notif Cleanup'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Collections Grid with Checkboxes */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {[
+                  { id: 'players', name: 'Players & Profiles', count: systemCounts?.players ?? analytics?.totals?.players ?? 0, desc: 'Deletes athlete profiles and player-specific preferences' },
+                  { id: 'academies', name: 'Academies', count: systemCounts?.academies ?? analytics?.totals?.academies ?? 0, desc: 'Deletes academy organization records and venue operator metadata' },
+                  { id: 'stores', name: 'Stores', count: systemCounts?.stores ?? analytics?.totals?.stores ?? 0, desc: 'Deletes store merchant profiles and partner settings' },
+                  { id: 'grounds', name: 'Grounds & Arenas', count: systemCounts?.grounds ?? 0, desc: 'Deletes facilities, slot bookings, and cancels pending slots' },
+                  { id: 'tournaments', name: 'Tournaments & Events', count: systemCounts?.tournaments ?? tournaments.length ?? 0, desc: 'Deletes tournaments, hosted events, and associated draws' },
+                  { id: 'registrations', name: 'Registrations', count: systemCounts?.registrations ?? 0, desc: 'Deletes athlete registrations and tournament entries' },
+                  { id: 'products', name: 'Shop Products', count: systemCounts?.products ?? 0, desc: 'Deletes sports store catalog items and inventory' },
+                  { id: 'orders', name: 'Customer Orders', count: systemCounts?.orders ?? 0, desc: 'Deletes operational store orders and fulfillment tracking' },
+                  { id: 'notifications', name: 'Notifications & Reads', count: systemCounts?.notifications ?? allNotifications.length ?? 0, desc: 'Deletes all broadcast announcements and user read receipts' },
+                ].map((item) => {
+                  const isChecked = selectedSystemCategories.includes(item.id);
+                  return (
+                    <div
+                      key={item.id}
+                      onClick={() => {
+                        if (isChecked) {
+                          setSelectedSystemCategories(selectedSystemCategories.filter(c => c !== item.id));
+                        } else {
+                          setSelectedSystemCategories([...selectedSystemCategories, item.id]);
+                        }
+                      }}
+                      className={`card p-4 border transition cursor-pointer flex flex-col justify-between ${
+                        isChecked
+                          ? 'border-purple-500 bg-purple-50/40 shadow-xs'
+                          : 'border-[#E2E8F0] hover:border-slate-300'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-bold text-sm text-[#172033]">{item.name}</span>
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => {}} // handled by parent onClick
+                            className="rounded text-purple-600 focus:ring-purple-500 h-4 w-4"
+                          />
+                        </div>
+                        <p className="text-2xl font-black text-[#172033]">{item.count}</p>
+                        <p className="text-[11px] text-slate-500 mt-1 leading-snug">{item.desc}</p>
+                      </div>
+                      <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400">
+                        <span>Collection: {item.id}</span>
+                        <span className={isChecked ? 'text-purple-700 font-bold' : ''}>
+                          {isChecked ? 'Selected' : 'Click to select'}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Action Bar for Selective Deletion */}
+              <div className="card p-5 border-[#E2E8F0] flex flex-col sm:flex-row items-center justify-between gap-4 bg-white">
+                <div>
+                  <h4 className="font-bold text-sm text-[#172033]">
+                    Selective Deletion ({selectedSystemCategories.length} categories selected)
+                  </h4>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Delete records belonging only to the selected collections above without resetting entire database.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2.5 w-full sm:w-auto">
+                  {selectedSystemCategories.length > 0 && (
+                    <button
+                      onClick={() => setSelectedSystemCategories([])}
+                      className="btn btn-secondary btn-sm text-xs"
+                    >
+                      Clear Selection
+                    </button>
+                  )}
+                  <button
+                    onClick={handleSelectiveDelete}
+                    disabled={selectedSystemCategories.length === 0 || selectiveDeleting}
+                    className="btn btn-sm text-xs bg-rose-600 hover:bg-rose-700 text-white border-0 disabled:opacity-50 flex items-center gap-1.5"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    {selectiveDeleting ? 'Deleting...' : 'Delete Selected Records'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Complete Operational Reset Section */}
+              <div className="card p-6 border-2 border-rose-200 bg-rose-50/30 rounded-2xl space-y-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                    <AlertTriangle className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-rose-900">Danger Zone: Complete Operational Data Reset</h3>
+                    <p className="text-xs text-rose-700 mt-1 leading-relaxed">
+                      This will permanently wipe all operational records (players, academies, stores, grounds, tournaments, registrations, products, orders, notifications).
+                      <strong> Your Admin account, user authentication, and game catalogs will remain preserved.</strong>
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex justify-end pt-2">
+                  <button
+                    onClick={() => {
+                      setResetConfirmInput('');
+                      setSecondConfirm(false);
+                      setShowResetModal(true);
+                    }}
+                    className="btn btn-sm text-xs bg-rose-600 hover:bg-rose-700 text-white border-0 flex items-center gap-1.5 shadow-sm"
+                  >
+                    <ShieldAlert className="h-4 w-4" />
+                    Reset Operational Data...
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -1637,6 +1910,100 @@ export default function AdminDashboard() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* OPERATIONAL DATA RESET MODAL */}
+      {showResetModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="card w-full max-w-lg border-rose-300 bg-white p-6 shadow-2xl relative text-[#172033]">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2 text-rose-600 font-black">
+                <AlertTriangle className="h-5 w-5" />
+                <span>Reset Operational Application Data</span>
+              </div>
+              <button
+                onClick={() => setShowResetModal(false)}
+                className="text-slate-400 hover:text-slate-700"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-4 text-xs">
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 leading-relaxed">
+                <p className="font-bold mb-1">DANGER: Permanent Destructive Action</p>
+                This operation will delete all operational data across all four portals. This cannot be undone.
+              </div>
+
+              <div>
+                <p className="font-bold text-slate-700 mb-1">Categories to be deleted:</p>
+                <ul className="list-disc list-inside space-y-0.5 text-slate-600 pl-1">
+                  <li>Player profiles & athletic preferences</li>
+                  <li>Academy profiles, grounds & slot schedules</li>
+                  <li>Store merchant profiles, gear catalog & orders</li>
+                  <li>Tournaments, draws & registrations</li>
+                  <li>Platform notifications & read receipts</li>
+                </ul>
+              </div>
+
+              <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800">
+                <p className="font-bold mb-0.5">Strictly Preserved (Safe):</p>
+                <p className="text-[11px] leading-relaxed">
+                  Administrator account, Firebase Auth logins, system configurations, master games catalog, and immutable audit logs.
+                </p>
+              </div>
+
+              <div className="space-y-1.5 pt-2">
+                <label className="font-bold text-slate-800 block">
+                  To confirm, type <span className="font-mono text-rose-600 select-all font-black">DELETE ALL DATA</span> below:
+                </label>
+                <input
+                  type="text"
+                  value={resetConfirmInput}
+                  onChange={(e) => {
+                    setResetConfirmInput(e.target.value);
+                    setSecondConfirm(false);
+                  }}
+                  placeholder="DELETE ALL DATA"
+                  className="input font-mono text-sm border-rose-300 focus:border-rose-600 focus:ring-rose-500"
+                />
+              </div>
+
+              {secondConfirm && (
+                <div className="p-3 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 font-semibold animate-in fade-in duration-150">
+                  ⚠️ Final Confirmation: Are you absolutely certain? Click "Confirm and Purge Now" to execute.
+                </div>
+              )}
+            </div>
+
+            <div className="mt-6 pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowResetModal(false)}
+                className="btn btn-secondary text-xs"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleCompleteReset}
+                disabled={resetConfirmInput !== 'DELETE ALL DATA' || resetSubmitting}
+                className="btn btn-sm text-xs bg-rose-600 hover:bg-rose-700 text-white border-0 disabled:opacity-40 flex items-center gap-1.5 shadow-sm"
+              >
+                {resetSubmitting ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Resetting Database...
+                  </>
+                ) : secondConfirm ? (
+                  'Confirm and Purge Now'
+                ) : (
+                  'Proceed to Final Confirmation'
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

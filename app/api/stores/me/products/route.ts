@@ -10,7 +10,10 @@ const Body = z.object({
   name: z.string().min(2),
   sport: z.string().min(2),
   price: z.number().min(1),
-  qty: z.number().min(0)
+  qty: z.number().min(0),
+  description: z.string().optional().default(''),
+  category: z.string().optional().default('Equipment'),
+  image: z.string().optional().default(''),
 });
 
 async function isStoreOrAdmin(uid: string) {
@@ -42,7 +45,7 @@ export async function POST(req: NextRequest) {
   try {
     const parsed = Body.safeParse(await req.json());
     if (!parsed.success) return fail('invalid', 'Invalid input payload', 400);
-    const { name, sport, price, qty } = parsed.data;
+    const { name, sport, price, qty, description, category, image } = parsed.data;
 
     const storeDoc = await adminDb.collection('stores').doc(session.uid).get();
     const storeName = storeDoc.exists ? storeDoc.data()?.storeName : 'Verified Store';
@@ -54,6 +57,9 @@ export async function POST(req: NextRequest) {
       sport,
       price,
       qty,
+      description: description || '',
+      category: category || 'Equipment',
+      image: image || '',
       rating: 0,
       ratingCount: 0,
       createdAt: Date.now()
@@ -72,7 +78,7 @@ export async function POST(req: NextRequest) {
     // Only inform players interested in this sport if in stock
     if (qty > 0) {
       await dispatchNotification({
-        title: `🏷️ New Gear Available: ${name}`,
+        title: `New Gear Available: ${name}`,
         message: `${storeName} added new ${sport} gear: ${name} (₹${price}). Check out the sports store!`,
         category: 'store',
         targetRole: 'player',
@@ -116,7 +122,7 @@ export async function PATCH(req: NextRequest) {
     // If price dropped meaningfully, notify interested players
     if (price !== undefined && price < existing.price) {
       await dispatchNotification({
-        title: `🔥 Price Drop: ${existing.name}`,
+        title: `Price Drop: ${existing.name}`,
         message: `Special offer on ${existing.name}! Price dropped from ₹${existing.price} to ₹${price}.`,
         category: 'store',
         targetRole: 'player',

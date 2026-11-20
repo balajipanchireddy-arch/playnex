@@ -98,7 +98,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
       if (newStatus === 'Registration Open') {
         await dispatchNotification({
-          title: `⚡ Registration Open: ${existing.name}`,
+          title: `Registration Open: ${existing.name}`,
           message: `Registration has opened for ${existing.name} (${existing.sport}). Secure your slot before ${parsed.data.registrationDeadline || existing.registrationDeadline || 'the deadline'}!`,
           category: 'tournament',
           targetRole: 'player',

@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { verifySession, clearSessionCookie } from '@/lib/auth/session';
 import { adminDb } from '@/lib/firebase/admin';
+import { isAdmin as hasAdminAccess } from '@/lib/auth/admin';
 import Navbar from '@/components/Navbar';
 import WelcomeNotificationModal from '@/components/WelcomeNotificationModal';
 import PlayNexAI from '@/components/PlayNexAI';
@@ -18,7 +19,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     .get();
 
   const roles = rolesSnap.docs.map((d: any) => d.data().roleId as string);
-  const isAdmin = roles.includes('admin');
+  const isAdmin = await hasAdminAccess(session.uid);
+
+  // Ensure Super Admin receives Admin navigation without fake extra roles.
+  if (isAdmin && !roles.includes('admin')) {
+    roles.push('admin');
+  }
 
   async function handleSignOut() {
     'use server';

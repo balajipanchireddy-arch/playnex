@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Toast from '@/components/ui/Toast';
 import {
   Trophy,
   MapPin,
@@ -374,26 +375,7 @@ export default function PlayerDashboard() {
   return (
     <div className="space-y-8 relative">
       {/* Toast Notification */}
-      {notification && (
-        <div className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-2xl px-5 py-3.5 shadow-2xl border backdrop-blur-md animate-in slide-in-from-bottom duration-200 ${
-          notification.type === 'ok'
-            ? 'bg-emerald-900/90 text-white border-emerald-700/80'
-            : 'bg-rose-900/90 text-white border-rose-700/80'
-        }`}>
-          {notification.type === 'ok' ? (
-            <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0" />
-          ) : (
-            <AlertCircle className="h-5 w-5 text-rose-400 shrink-0" />
-          )}
-          <span className="text-xs font-semibold">{notification.text}</span>
-          <button
-            onClick={() => setNotification(null)}
-            className="ml-2 rounded-lg p-1 text-white/60 hover:text-white"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      )}
+      <Toast message={notification} onClose={() => setNotification(null)} />
 
       {/* Hero Athlete Overview Card */}
       <div className="card bg-white text-[#172033] border-[#E2E8F0] p-6 sm:p-8 relative overflow-hidden shadow-sm">

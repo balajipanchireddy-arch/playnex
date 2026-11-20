@@ -70,6 +70,7 @@ public class MainActivity extends AppCompatActivity {
         setupBackNavigation();
 
         loadHome();
+        checkForUpdates();
     }
 
     private void initViews() {
@@ -208,6 +209,68 @@ public class MainActivity extends AppCompatActivity {
             targetUrl = intent.getData().toString();
         }
         webView.loadUrl(targetUrl);
+    }
+
+    private void checkForUpdates() {
+        new Thread(() -> {
+            try {
+                java.net.URL url = new java.net.URL("https://playnex-beta.vercel.app/api/version");
+                java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
+                conn.setRequestMethod("GET");
+                conn.setConnectTimeout(6000);
+                conn.setReadTimeout(6000);
+
+                if (conn.getResponseCode() == 200) {
+                    java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(conn.getInputStream()));
+                    StringBuilder sb = new StringBuilder();
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        sb.append(line);
+                    }
+                    reader.close();
+
+                    org.json.JSONObject json = new org.json.JSONObject(sb.toString());
+                    if (json.optBoolean("ok", false) && json.has("data")) {
+                        org.json.JSONObject data = json.getJSONObject("data");
+                        int remoteVersionCode = data.optInt("versionCode", 1);
+                        String remoteVersionName = data.optString("versionName", "1.1.0");
+                        String downloadUrl = data.optString("downloadUrl", "https://github.com/balajipanchireddy-arch/playnex/releases/latest/download/PlayNex.apk");
+                        String releaseNotes = data.optString("releaseNotes", "New performance and feature updates available.");
+                        boolean mandatory = data.optBoolean("mandatory", false);
+
+                        int currentVersionCode = getPackageManager().getPackageInfo(getPackageName(), 0).versionCode;
+
+                        if (remoteVersionCode > currentVersionCode) {
+                            runOnUiThread(() -> showUpdateDialog(remoteVersionName, releaseNotes, downloadUrl, mandatory));
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                // Silently ignore update check errors to prevent disrupting user experience
+            }
+        }).start();
+    }
+
+    private void showUpdateDialog(String versionName, String releaseNotes, String downloadUrl, boolean mandatory) {
+        androidx.appcompat.app.AlertDialog.Builder builder = new androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Update Available (v" + versionName + ")")
+                .setMessage(releaseNotes + "\n\nWould you like to download the latest PlayNex APK?")
+                .setPositiveButton("Update Now", (dialog, which) -> {
+                    try {
+                        Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(downloadUrl));
+                        startActivity(intent);
+                    } catch (Exception e) {
+                        Toast.makeText(MainActivity.this, "Unable to open download link", Toast.LENGTH_SHORT).show();
+                    }
+                });
+
+        if (!mandatory) {
+            builder.setNegativeButton("Later", (dialog, which) -> dialog.dismiss());
+        } else {
+            builder.setCancelable(false);
+        }
+
+        builder.show();
     }
 }
 

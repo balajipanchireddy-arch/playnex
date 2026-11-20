@@ -138,7 +138,7 @@ export async function POST(req: NextRequest) {
     // Only notify players if tournament is published (Registration Open or Upcoming), NOT if it's an unpublished Draft
     if (data.status === 'Registration Open' || data.status === 'Upcoming') {
       await dispatchNotification({
-        title: `🏆 New Tournament: ${data.name}`,
+        title: `New Tournament: ${data.name}`,
         message: `${organizerName} announced ${data.name} in ${data.sport}. Date: ${data.date}. Venue: ${data.venue}. Register before ${data.registrationDeadline}!`,
         category: 'tournament',
         targetRole: 'player',

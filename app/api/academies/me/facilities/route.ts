@@ -8,10 +8,12 @@ import { logActivity } from '@/lib/firebase/activity';
 
 const Body = z.object({
   name: z.string().min(2),
-  address: z.string().min(2),
+  address: z.string().optional().default(''),
+  description: z.string().optional().default(''),
+  contact: z.string().optional().default(''),
   sport: z.string().min(2),
   price: z.number().min(1),
-  image: z.string().optional(),
+  image: z.string().optional().default(''),
 });
 
 async function isAcademyOrAdmin(uid: string) {
@@ -44,7 +46,7 @@ export async function POST(req: NextRequest) {
   try {
     const parsed = Body.safeParse(await req.json());
     if (!parsed.success) return fail('invalid', 'Invalid input payload', 400);
-    const { name, address, sport, price, image } = parsed.data;
+    const { name, address, description, contact, sport, price, image } = parsed.data;
 
     const defaultSlots: Record<string, boolean> = {};
     for (let i = 6; i <= 22; i++) defaultSlots[i.toString()] = true;
@@ -58,7 +60,9 @@ export async function POST(req: NextRequest) {
       academyName,
       academyVerification,
       name,
-      address,
+      address: address || '',
+      description: description || '',
+      contact: contact || '',
       sport,
       price,
       image: image || '',
@@ -81,8 +85,8 @@ export async function POST(req: NextRequest) {
     // AUTOMATIC ACADEMY-TO-PLAYER NOTIFICATION:
     // Inform athletes interested in this sport about the new venue
     await dispatchNotification({
-      title: `🏟️ New Turf Arena: ${name}`,
-      message: `${academyName} opened ${name} for ${sport} bookings at ${address}. Hourly rate: ₹${price}/hr.`,
+      title: `New Turf Arena: ${name}`,
+      message: `${academyName} opened ${name} for ${sport} bookings${address ? ` at ${address}` : ''}. Hourly rate: ₹${price}/hr.`,
       category: 'academy',
       targetRole: 'player',
       targetSport: sport,

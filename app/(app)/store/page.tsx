@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Toast from '@/components/ui/Toast';
 import {
   ShoppingBag,
   Package,
@@ -30,6 +31,9 @@ export default function StoreDashboard() {
   // Product Form State
   const [name, setName] = useState('');
   const [sport, setSport] = useState('Basketball');
+  const [category, setCategory] = useState('Equipment');
+  const [description, setDescription] = useState('');
+  const [productImageUrl, setProductImageUrl] = useState('');
   const [price, setPrice] = useState('');
   const [qty, setQty] = useState('1');
   const [submittingProduct, setSubmittingProduct] = useState(false);
@@ -73,7 +77,15 @@ export default function StoreDashboard() {
       const res = await fetch('/api/stores/me/products', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, sport, price: Number(price), qty: Number(qty) })
+        body: JSON.stringify({
+          name,
+          sport,
+          category: category.trim(),
+          description: description.trim(),
+          price: Number(price),
+          qty: Number(qty),
+          image: productImageUrl.trim(),
+        }),
       });
       const data = await res.json();
       if (data.ok) {
@@ -81,6 +93,8 @@ export default function StoreDashboard() {
         setName('');
         setPrice('');
         setQty('1');
+        setDescription('');
+        setProductImageUrl('');
         setShowAddForm(false);
         loadData();
       } else {
@@ -171,26 +185,7 @@ export default function StoreDashboard() {
   return (
     <div className="space-y-8 relative">
       {/* Toast Notification */}
-      {notification && (
-        <div className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-2xl px-5 py-3.5 shadow-2xl border backdrop-blur-md animate-in slide-in-from-bottom duration-200 ${
-          notification.type === 'ok'
-            ? 'bg-emerald-900/90 text-white border-emerald-700/80'
-            : 'bg-rose-900/90 text-white border-rose-700/80'
-        }`}>
-          {notification.type === 'ok' ? (
-            <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0" />
-          ) : (
-            <AlertCircle className="h-5 w-5 text-rose-400 shrink-0" />
-          )}
-          <span className="text-xs font-semibold">{notification.text}</span>
-          <button
-            onClick={() => setNotification(null)}
-            className="ml-2 rounded-lg p-1 text-white/60 hover:text-white"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      )}
+      <Toast message={notification} onClose={() => setNotification(null)} />
 
       {/* Store Hero Banner */}
       <div className="card bg-white text-[#172033] border-[#E2E8F0] p-6 sm:p-8 relative overflow-hidden shadow-sm">
@@ -324,6 +319,21 @@ export default function StoreDashboard() {
               </select>
             </div>
             <div>
+              <label className="label">Gear Category (Optional)</label>
+              <select
+                value={category}
+                onChange={e => setCategory(e.target.value)}
+                className="input"
+              >
+                <option>Equipment</option>
+                <option>Apparel</option>
+                <option>Footwear</option>
+                <option>Accessories</option>
+                <option>Nutrition</option>
+                <option>Other</option>
+              </select>
+            </div>
+            <div>
               <label className="label">Price (₹)</label>
               <input
                 type="number"
@@ -347,18 +357,38 @@ export default function StoreDashboard() {
                 placeholder="e.g. 10"
               />
             </div>
-            <div className="md:col-span-3 flex items-end justify-end gap-2">
+            <div className="md:col-span-3">
+              <label className="label">Product Description (Optional)</label>
+              <textarea
+                rows={2}
+                value={description}
+                onChange={e => setDescription(e.target.value)}
+                className="input text-xs"
+                placeholder="Product specifications, size guide, material info..."
+              />
+            </div>
+            <div className="md:col-span-3">
+              <label className="label">Product Image URL (Optional)</label>
+              <input
+                type="url"
+                value={productImageUrl}
+                onChange={e => setProductImageUrl(e.target.value)}
+                className="input text-xs"
+                placeholder="https://images.unsplash.com/... or direct image link"
+              />
+            </div>
+            <div className="md:col-span-3 flex flex-col sm:flex-row items-center justify-end gap-2">
               <button
                 type="button"
                 onClick={() => setShowAddForm(false)}
-                className="btn btn-secondary text-xs"
+                className="btn btn-secondary text-xs w-full sm:w-auto"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={submittingProduct}
-                className="btn text-xs"
+                className="btn text-xs w-full sm:w-auto"
               >
                 {submittingProduct ? 'Saving Product...' : 'Add to Catalog'}
               </button>
@@ -422,14 +452,35 @@ export default function StoreDashboard() {
                     key={p.id}
                     className="card p-4 border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
                   >
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h4 className="font-bold text-base text-slate-900">{p.name}</h4>
-                        <span className="badge badge-brand text-[10px]">{p.sport}</span>
-                        {isOut && <span className="badge badge-bad text-[10px]">Out of stock</span>}
-                        {isLow && <span className="badge badge-warn text-[10px]">Low stock</span>}
+                    <div className="flex items-start gap-3">
+                      {p.image ? (
+                        <img
+                          src={p.image}
+                          alt={p.name}
+                          className="h-14 w-14 rounded-xl object-cover border border-slate-200 shrink-0"
+                        />
+                      ) : (
+                        <div className="h-14 w-14 rounded-xl bg-slate-100 flex items-center justify-center text-slate-400 shrink-0">
+                          <Package className="h-6 w-6" />
+                        </div>
+                      )}
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h4 className="font-bold text-base text-slate-900">{p.name}</h4>
+                          <span className="badge badge-brand text-[10px]">{p.sport}</span>
+                          {p.category && (
+                            <span className="badge bg-slate-100 text-slate-600 border border-slate-200 text-[10px]">
+                              {p.category}
+                            </span>
+                          )}
+                          {isOut && <span className="badge badge-bad text-[10px]">Out of stock</span>}
+                          {isLow && <span className="badge badge-warn text-[10px]">Low stock</span>}
+                        </div>
+                        {p.description && (
+                          <p className="text-xs text-slate-600 mt-1 line-clamp-1">{p.description}</p>
+                        )}
+                        <p className="text-[11px] text-slate-400 mt-0.5">ID: {p.id.slice(0, 8)}</p>
                       </div>
-                      <p className="text-xs text-slate-400 mt-0.5">ID: {p.id.slice(0, 8)}</p>
                     </div>
 
                     <div className="flex items-center gap-4 justify-between sm:justify-end">

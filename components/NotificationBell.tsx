@@ -14,7 +14,8 @@ import {
   ShoppingBag,
   Landmark,
   Package,
-  ExternalLink
+  ExternalLink,
+  Trash2
 } from 'lucide-react';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
@@ -88,6 +89,24 @@ export default function NotificationBell() {
     }
   }
 
+  async function deleteNotification(id: string) {
+    try {
+      setNotifications(notifications.filter(n => n.id !== id));
+      await fetch(`/api/notifications?id=${id}`, { method: 'DELETE' });
+    } catch (e) {
+      console.error('Failed to dismiss notification:', e);
+    }
+  }
+
+  async function clearAllNotifications() {
+    try {
+      setNotifications([]);
+      await fetch('/api/notifications?clearAll=true', { method: 'DELETE' });
+    } catch (e) {
+      console.error('Failed to clear notifications:', e);
+    }
+  }
+
   const unreadCount = notifications.filter(n => !n.read).length;
 
   const getCategoryIcon = (cat: string) => {
@@ -140,15 +159,28 @@ export default function NotificationBell() {
                 </span>
               )}
             </div>
-            {unreadCount > 0 && (
-              <button
-                onClick={markAllAsRead}
-                className="text-[11px] font-semibold text-[#2563EB] hover:text-[#1D4ED8] flex items-center gap-1 transition"
-              >
-                <CheckCheck className="h-3 w-3" />
-                Mark all read
-              </button>
-            )}
+            <div className="flex items-center gap-2.5">
+              {unreadCount > 0 && (
+                <button
+                  onClick={markAllAsRead}
+                  className="text-[11px] font-semibold text-[#2563EB] hover:text-[#1D4ED8] flex items-center gap-1 transition"
+                  title="Mark all notifications as read"
+                >
+                  <CheckCheck className="h-3 w-3" />
+                  Read all
+                </button>
+              )}
+              {notifications.length > 0 && (
+                <button
+                  onClick={clearAllNotifications}
+                  className="text-[11px] font-semibold text-rose-500 hover:text-rose-700 flex items-center gap-1 transition"
+                  title="Clear all notifications"
+                >
+                  <Trash2 className="h-3 w-3" />
+                  Clear
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="max-h-[360px] overflow-y-auto divide-y divide-slate-100 py-1">
@@ -206,15 +238,24 @@ export default function NotificationBell() {
                         </div>
                       </div>
 
-                      {!n.read && (
+                      <div className="flex items-center gap-1 shrink-0">
+                        {!n.read && (
+                          <button
+                            onClick={() => markAsRead(n.id)}
+                            className="text-[#94A3B8] hover:text-emerald-600 p-1 transition"
+                            title="Mark as read"
+                          >
+                            <Check className="h-3.5 w-3.5" />
+                          </button>
+                        )}
                         <button
-                          onClick={() => markAsRead(n.id)}
-                          className="text-[#94A3B8] hover:text-emerald-600 p-1 shrink-0 transition"
-                          title="Mark as read"
+                          onClick={() => deleteNotification(n.id)}
+                          className="text-[#94A3B8] hover:text-rose-500 p-1 transition"
+                          title="Dismiss notification"
                         >
-                          <Check className="h-3.5 w-3.5" />
+                          <Trash2 className="h-3.5 w-3.5" />
                         </button>
-                      )}
+                      </div>
                     </div>
                   </div>
                 );

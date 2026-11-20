@@ -122,7 +122,7 @@ export async function POST(req: NextRequest) {
     // Send notification to players when the event is open for registration
     if (d.status === 'Registration Open' || d.status === 'Upcoming') {
       await dispatchNotification({
-        title: `🏆 New Academy Event: ${d.name}`,
+        title: `New Academy Event: ${d.name}`,
         message: `${academyName} announced ${d.name} (${d.sport}) on ${d.date} at ${venue}. Entries open now!`,
         category: 'academy',
         targetRole: 'player',
