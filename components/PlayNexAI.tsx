@@ -70,22 +70,32 @@ export default function PlayNexAI() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: [...messages, userMsg].map((m) => ({
-            role: m.sender === 'user' ? 'user' : 'model',
-            content: m.text,
+          message: query,
+          history: messages.map((m) => ({
+            sender: m.sender,
+            text: m.text,
           })),
         }),
       });
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data?.error || 'AI Assistant is momentarily unavailable.');
+        const errorMessage =
+          typeof data?.error === 'string'
+            ? data.error
+            : data?.error?.message;
+
+        throw new Error(errorMessage || 'AI Assistant is momentarily unavailable.');
       }
+
+      const reply = data?.data?.reply;
 
       const aiMsg: ChatMessage = {
         id: `ai-${Date.now()}`,
         sender: 'ai',
-        text: data.reply || 'I could not process that request. Please try again.',
+        text: typeof reply === 'string' && reply.trim()
+          ? reply
+          : 'I could not process that request. Please try again.',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
 
