@@ -1,6 +1,8 @@
 import { adminDb } from '@/lib/firebase/admin';
 import { ok, fail } from '@/lib/api/response';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   try {
     const snap = await adminDb.collection('products').get();
