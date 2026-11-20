@@ -7,8 +7,8 @@ import {
   LayoutDashboard,
   Users,
   Trophy,
-  Landmark,
-  ShoppingBag,
+  GraduationCap,
+  Store,
   Calendar,
   Bell,
   BarChart3,
@@ -579,9 +579,9 @@ export default function AdminDashboard() {
     { id: 'games', label: 'Game Management', icon: Gamepad2, badge: gamesList.length },
     { id: 'tournaments', label: 'Tournaments', icon: Trophy, badge: tournaments.length },
     { id: 'users', label: 'User Management', icon: Users, badge: usersList.length },
-    { id: 'players', label: 'Players', icon: Trophy, badge: analytics?.totals?.players },
-    { id: 'academies', label: 'Academies', icon: Landmark, badge: analytics?.totals?.academies },
-    { id: 'stores', label: 'Stores', icon: ShoppingBag, badge: analytics?.totals?.stores },
+    { id: 'players', label: 'Players', icon: Users, badge: analytics?.totals?.players },
+    { id: 'academies', label: 'Academies', icon: GraduationCap, badge: analytics?.totals?.academies },
+    { id: 'stores', label: 'Stores', icon: Store, badge: analytics?.totals?.stores },
     { id: 'matches', label: 'Matches', icon: Calendar },
     { id: 'notifications', label: 'Notifications', icon: Bell, badge: allNotifications.length },
     { id: 'system', label: 'System Management', icon: Database },
@@ -798,7 +798,7 @@ export default function AdminDashboard() {
                           <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
                             req.type === 'store' ? 'bg-sky-500/20 text-sky-400' : 'bg-teal-500/20 text-teal-400'
                           }`}>
-                            {req.type === 'store' ? <ShoppingBag className="h-4 w-4" /> : <Landmark className="h-4 w-4" />}
+                            {req.type === 'store' ? <Store className="h-4 w-4" /> : <GraduationCap className="h-4 w-4" />}
                           </div>
                           <div>
                             <p className="text-xs font-bold text-[#172033]">{req.displayName}</p>

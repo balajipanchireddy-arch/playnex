@@ -1,11 +1,13 @@
 import Link from 'next/link';
 import {
   Zap,
+  Users,
+  GraduationCap,
+  Store,
   Trophy,
-  Landmark,
-  ShoppingBag,
   ArrowRight,
   MapPin,
+  Package,
   Calendar,
   Sparkles,
   ShieldCheck,
@@ -18,7 +20,7 @@ import {
 const ROLES = [
   {
     key: 'player',
-    icon: Trophy,
+    icon: Users,
     title: 'Player & Athlete Arena',
     desc: 'Discover nearby turfs, book instant hourly slots, enter tournaments, and team up with local players.',
     badge: 'Popular',
@@ -27,7 +29,7 @@ const ROLES = [
   },
   {
     key: 'academy',
-    icon: Landmark,
+    icon: GraduationCap,
     title: 'Academy & Venues',
     desc: 'List your sports facilities, manage live hourly time-slots, toggle arena closures, and host championships.',
     badge: 'For Operators',
@@ -36,7 +38,7 @@ const ROLES = [
   },
   {
     key: 'store',
-    icon: ShoppingBag,
+    icon: Store,
     title: 'Pro Sports Store',
     desc: 'Showcase authentic sporting gear, manage live stock levels, and fulfill orders directly to local athletes.',
     badge: 'Merchants',
@@ -97,12 +99,12 @@ const FEATURES = [
     desc: 'Browse multi-sport turfs with real-time hourly availability matrices from morning to night.'
   },
   {
-    icon: Calendar,
+    icon: Trophy,
     title: 'Competitive Tournaments',
     desc: 'Register for local tournaments, cups, and esports leagues with transparent bracket tracking.'
   },
   {
-    icon: ShoppingBag,
+    icon: Package,
     title: 'Curated Pro Gear',
     desc: 'Order verified equipment, apparel, and accessories directly from trusted merchant sports shops.'
   },

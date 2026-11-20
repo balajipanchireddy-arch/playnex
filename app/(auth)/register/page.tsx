@@ -13,9 +13,9 @@ import {
   AlertCircle, 
   Loader2, 
   ArrowRight,
-  Trophy,
-  Landmark,
-  ShoppingBag
+  Users,
+  GraduationCap,
+  Store
 } from 'lucide-react';
 
 function RegisterForm() {
@@ -62,9 +62,9 @@ function RegisterForm() {
   }
 
   const rolePills = [
-    { id: 'player', label: 'Player', icon: Trophy, desc: 'Play & Book' },
-    { id: 'academy', label: 'Academy', icon: Landmark, desc: 'Manage Grounds' },
-    { id: 'store', label: 'Store', icon: ShoppingBag, desc: 'Sell Gear' },
+    { id: 'player', label: 'Player', icon: Users, desc: 'Play & Book' },
+    { id: 'academy', label: 'Academy', icon: GraduationCap, desc: 'Manage Grounds' },
+    { id: 'store', label: 'Store', icon: Store, desc: 'Sell Gear' },
   ] as const;
 
   return (

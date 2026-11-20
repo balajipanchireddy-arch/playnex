@@ -124,7 +124,7 @@ export default function PlayNexAI() {
           aria-label="Open PlayNex AI"
         >
           <div className="relative">
-            <Sparkles className="h-5 w-5 text-blue-100" />
+            <Bot className="h-5 w-5 text-blue-100" />
             <span className="absolute -top-1 -right-1 flex h-2 w-2 rounded-full bg-emerald-400 animate-ping" />
           </div>
           <span className="hidden sm:inline-block font-bold text-sm tracking-wide">

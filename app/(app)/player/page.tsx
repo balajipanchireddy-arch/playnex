@@ -7,7 +7,7 @@ import {
   MapPin,
   Calendar,
   Star,
-  ShoppingBag,
+  Store,
   CheckCircle2,
   AlertCircle,
   X,
@@ -382,7 +382,7 @@ export default function PlayerDashboard() {
         <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-6">
           <div className="flex items-center gap-4">
             <div className="flex h-14 w-14 sm:h-16 sm:w-16 items-center justify-center rounded-2xl bg-blue-50 text-[#2563EB]">
-              <Trophy className="h-7 w-7" />
+              <Users className="h-7 w-7" />
             </div>
             <div>
               <div className="flex items-center gap-2 mb-1">
@@ -767,7 +767,7 @@ export default function PlayerDashboard() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-teal-50 text-teal-600 flex items-center justify-center">
-              <Landmark className="h-4 w-4" />
+              <MapPin className="h-4 w-4" />
             </div>
             <h2 className="text-lg font-extrabold text-slate-900">
               Turf Arenas & Grounds ({filteredFacilities.length})
@@ -796,7 +796,7 @@ export default function PlayerDashboard() {
                       />
                     ) : (
                       <div className="flex h-full w-full items-center justify-center bg-gradient-to-tr from-slate-100 to-slate-200 text-slate-400">
-                        <Landmark className="h-12 w-12" />
+                        <MapPin className="h-12 w-12" />
                       </div>
                     )}
                     <span className="absolute top-3 left-3 badge bg-white/90 text-slate-900 backdrop-blur-sm shadow-xs text-xs font-bold">
@@ -868,7 +868,7 @@ export default function PlayerDashboard() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-sky-50 text-sky-600 flex items-center justify-center">
-              <ShoppingBag className="h-4 w-4" />
+              <Store className="h-4 w-4" />
             </div>
             <h2 className="text-lg font-extrabold text-slate-900">
               Pro Sports Gear & Equipment ({filteredProducts.length})
@@ -899,7 +899,7 @@ export default function PlayerDashboard() {
                         />
                       ) : (
                         <div className="flex h-full w-full items-center justify-center bg-gradient-to-tr from-slate-100 to-slate-200 text-slate-400">
-                          <ShoppingBag className="h-10 w-10" />
+                          <Package className="h-10 w-10" />
                         </div>
                       )}
                       <span className="absolute top-2 left-2 badge bg-white/90 text-slate-800 text-[10px] font-bold">

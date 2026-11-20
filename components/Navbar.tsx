@@ -6,9 +6,9 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard,
-  Trophy,
-  Landmark,
-  ShoppingBag,
+  Users,
+  GraduationCap,
+  Store,
   ShieldCheck,
   ClipboardCheck,
   LogOut,
@@ -40,7 +40,7 @@ export default function Navbar({ roles, isAdmin, userEmail, signOutAction }: Nav
     {
       href: '/player',
       label: 'Player',
-      icon: Trophy,
+      icon: Users,
       visible: isAdmin || roles.includes('player'),
     },
     {
@@ -52,13 +52,13 @@ export default function Navbar({ roles, isAdmin, userEmail, signOutAction }: Nav
     {
       href: '/academy',
       label: 'Academy',
-      icon: Landmark,
+      icon: GraduationCap,
       visible: isAdmin || roles.includes('academy'),
     },
     {
       href: '/store',
       label: 'Store',
-      icon: ShoppingBag,
+      icon: Store,
       visible: isAdmin || roles.includes('store'),
     },
     {

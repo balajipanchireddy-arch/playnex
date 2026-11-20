@@ -11,8 +11,8 @@ import {
   Activity, 
   Info, 
   CheckCircle2, 
-  ShoppingBag,
-  Landmark,
+  Store,
+  GraduationCap,
   Package,
   ExternalLink,
   Trash2
@@ -112,8 +112,8 @@ export default function NotificationBell() {
   const getCategoryIcon = (cat: string) => {
     switch (cat) {
       case 'tournament': return Trophy;
-      case 'academy': return Landmark;
-      case 'store': return ShoppingBag;
+      case 'academy': return GraduationCap;
+      case 'store': return Store;
       case 'order': return Package;
       case 'announcement': return Megaphone;
       case 'registration': return CheckCircle2;

@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import Toast from '@/components/ui/Toast';
 import {
-  ShoppingBag,
+  Store,
   Package,
   CheckCircle2,
   AlertTriangle,
@@ -192,7 +192,7 @@ export default function StoreDashboard() {
         <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-6">
           <div className="flex items-center gap-4">
             <div className="flex h-14 w-14 sm:h-16 sm:w-16 items-center justify-center rounded-2xl bg-blue-50 text-[#2563EB]">
-              <ShoppingBag className="h-7 w-7" />
+              <Store className="h-7 w-7" />
             </div>
             <div>
               <div className="flex items-center gap-2 mb-1">
@@ -429,7 +429,7 @@ export default function StoreDashboard() {
 
           {products.length === 0 ? (
             <div className="card text-center py-12">
-              <ShoppingBag className="h-10 w-10 text-slate-300 mx-auto mb-2" />
+              <Package className="h-10 w-10 text-slate-300 mx-auto mb-2" />
               <h3 className="text-sm font-bold text-slate-700">No products added yet</h3>
               <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
                 Add equipment to your pro shop to make it visible to local athletes.

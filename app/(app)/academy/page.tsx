@@ -5,7 +5,7 @@ import { useState, useEffect } from 'react';
 import { uploadImage } from '@/lib/utils/upload';
 import Toast from '@/components/ui/Toast';
 import {
-  Landmark,
+  GraduationCap,
   Trophy,
   Plus,
   Trash2,
@@ -303,7 +303,7 @@ export default function AcademyDashboard() {
         <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-6">
           <div className="flex items-center gap-4">
             <div className="flex h-14 w-14 sm:h-16 sm:w-16 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
-              <Landmark className="h-7 w-7" />
+              <GraduationCap className="h-7 w-7" />
             </div>
             <div>
               <div className="flex items-center gap-2 mb-1">
@@ -655,7 +655,7 @@ export default function AcademyDashboard() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-teal-50 text-teal-700 flex items-center justify-center">
-              <Landmark className="h-4 w-4" />
+              <MapPin className="h-4 w-4" />
             </div>
             <h2 className="text-lg font-extrabold text-slate-900">
               Your Grounds & Live Slot Booking ({facilities.length})
@@ -667,7 +667,7 @@ export default function AcademyDashboard() {
         </div>
         {facilities.length === 0 ? (
           <div className="card text-center py-12">
-            <Landmark className="h-10 w-10 text-slate-300 mx-auto mb-2" />
+            <MapPin className="h-10 w-10 text-slate-300 mx-auto mb-2" />
             <h3 className="text-sm font-bold text-slate-700">No grounds added yet</h3>
             <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
               Add your turf or ground to start accepting athlete reservations and managing hourly slots.
@@ -696,7 +696,7 @@ export default function AcademyDashboard() {
                       />
                     ) : (
                       <div className="h-16 w-16 sm:h-20 sm:w-20 rounded-xl bg-slate-100 flex items-center justify-center text-slate-400 shrink-0">
-                        <Landmark className="h-8 w-8" />
+                        <MapPin className="h-8 w-8" />
                      </div>
                     )}
                     <div>
