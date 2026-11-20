@@ -62,9 +62,9 @@ function RegisterForm() {
   }
 
   const rolePills = [
-    { id: 'player', label: 'Player', icon: Users, desc: 'Play & Book' },
-    { id: 'academy', label: 'Academy', icon: GraduationCap, desc: 'Manage Grounds' },
-    { id: 'store', label: 'Store', icon: Store, desc: 'Sell Gear' },
+    { id: 'player', label: 'Player', iconImage: '/icons/players.jpg', icon: Users, desc: 'Play & Book' },
+    { id: 'academy', label: 'Academy', iconImage: '/icons/academy.jpg', icon: GraduationCap, desc: 'Manage Grounds' },
+    { id: 'store', label: 'Store', iconImage: '/icons/store.png', icon: Store, desc: 'Sell Gear' },
   ] as const;
 
   return (
@@ -112,7 +112,9 @@ function RegisterForm() {
                       : 'border-[#E2E8F0] bg-white text-[#64748B] hover:bg-slate-50 hover:text-[#172033]'
                   }`}
                 >
-                  <Icon className={`h-5 w-5 mb-1 ${isSelected ? 'text-[#2563EB]' : 'text-[#64748B]'}`} />
+                  <div className="w-8 h-8 rounded-lg overflow-hidden border border-[#E2E8F0] mb-1.5 flex items-center justify-center bg-white shadow-2xs shrink-0">
+                    <img src={item.iconImage} alt={item.label} className="w-full h-full object-cover" />
+                  </div>
                   <span className="text-xs font-bold leading-tight">{item.label}</span>
                   <span className="text-[10px] text-[#64748B] mt-0.5 hidden sm:inline">{item.desc}</span>
                 </button>

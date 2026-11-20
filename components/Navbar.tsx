@@ -40,24 +40,21 @@ export default function Navbar({ roles, isAdmin, userEmail, signOutAction }: Nav
     {
       href: '/player',
       label: 'Player',
+      iconImage: '/icons/players.jpg',
       icon: Users,
       visible: isAdmin || roles.includes('player'),
     },
     {
-      href: '/staff',
-      label: 'Staff',
-      icon: ClipboardCheck,
-      visible: isAdmin || roles.includes('staff'),
-    },
-    {
       href: '/academy',
       label: 'Academy',
+      iconImage: '/icons/academy.jpg',
       icon: GraduationCap,
       visible: isAdmin || roles.includes('academy'),
     },
     {
       href: '/store',
       label: 'Store',
+      iconImage: '/icons/store.png',
       icon: Store,
       visible: isAdmin || roles.includes('store'),
     },
@@ -110,13 +107,21 @@ export default function Navbar({ roles, isAdmin, userEmail, signOutAction }: Nav
                 <Link
                   key={link.href}
                   href={link.href}
-                  className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition-all duration-150 ${
+                  className={`inline-flex items-center gap-2 rounded-xl px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition-all duration-150 ${
                     isActive
                       ? 'bg-[#DBEAFE] text-[#1E40AF] border border-blue-200'
                       : 'text-[#64748B] hover:bg-slate-100 hover:text-[#172033] border border-transparent'
                   }`}
                 >
-                  <Icon className={`h-3.5 w-3.5 ${isActive ? 'text-[#2563EB]' : 'text-[#64748B]'}`} />
+                  {link.iconImage ? (
+                    <img
+                      src={link.iconImage}
+                      alt={link.label}
+                      className="h-4 w-4 rounded-full object-cover border border-[#E2E8F0] shadow-2xs shrink-0"
+                    />
+                  ) : (
+                    <Icon className={`h-3.5 w-3.5 ${isActive ? 'text-[#2563EB]' : 'text-[#64748B]'}`} />
+                  )}
                   {link.label}
                 </Link>
               );
@@ -207,9 +212,17 @@ export default function Navbar({ roles, isAdmin, userEmail, signOutAction }: Nav
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <div className={`p-1.5 rounded-lg ${isActive ? 'bg-[#2563EB] text-white' : 'bg-slate-100 text-[#64748B]'}`}>
-                      <Icon className="h-4 w-4" />
-                    </div>
+                    {link.iconImage ? (
+                      <img
+                        src={link.iconImage}
+                        alt={link.label}
+                        className="h-7 w-7 rounded-lg object-cover border border-[#E2E8F0] shadow-2xs shrink-0"
+                      />
+                    ) : (
+                      <div className={`p-1.5 rounded-lg ${isActive ? 'bg-[#2563EB] text-white' : 'bg-slate-100 text-[#64748B]'}`}>
+                        <Icon className="h-4 w-4" />
+                      </div>
+                    )}
                     {link.label}
                   </div>
                   <ChevronRight className="h-4 w-4 text-[#94A3B8]" />

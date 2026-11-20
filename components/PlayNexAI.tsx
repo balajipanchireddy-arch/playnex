@@ -123,8 +123,8 @@ export default function PlayNexAI() {
           className="fixed bottom-6 right-6 z-40 group flex items-center gap-2.5 rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] p-3.5 sm:px-5 sm:py-3.5 text-white shadow-lg active:scale-95 transition-all duration-150"
           aria-label="Open PlayNex AI"
         >
-          <div className="relative">
-            <Bot className="h-5 w-5 text-blue-100" />
+          <div className="relative h-6 w-6 rounded-full overflow-hidden border border-white/60 shadow-xs shrink-0">
+            <img src="/icons/ai-copilot.jpg" alt="PlayNex AI" className="w-full h-full object-cover" />
             <span className="absolute -top-1 -right-1 flex h-2 w-2 rounded-full bg-emerald-400 animate-ping" />
           </div>
           <span className="hidden sm:inline-block font-bold text-sm tracking-wide">
@@ -147,8 +147,8 @@ export default function PlayNexAI() {
           {/* Header */}
           <div className="flex items-center justify-between px-5 py-4 border-b border-[#E2E8F0] bg-slate-50 relative">
             <div className="flex items-center gap-3">
-              <div className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-[#2563EB] text-white shadow-xs">
-                <Bot className="h-5 w-5" />
+              <div className="relative flex h-10 w-10 items-center justify-center rounded-xl overflow-hidden border border-[#E2E8F0] shadow-xs shrink-0 bg-white">
+                <img src="/icons/ai-copilot.jpg" alt="PlayNex AI" className="w-full h-full object-cover" />
                 <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-emerald-500 border-2 border-white" />
               </div>
               <div>
@@ -197,13 +197,13 @@ export default function PlayNexAI() {
                   className={`flex items-start gap-2.5 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}
                 >
                   <div
-                    className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-xl text-xs ${
+                    className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-xl text-xs overflow-hidden ${
                       isUser
                         ? 'bg-[#2563EB] text-white'
-                        : 'bg-slate-100 text-[#2563EB] border border-[#E2E8F0]'
+                        : 'bg-white border border-[#E2E8F0]'
                     }`}
                   >
-                    {isUser ? <User className="h-3.5 w-3.5" /> : <Bot className="h-3.5 w-3.5" />}
+                    {isUser ? <User className="h-3.5 w-3.5" /> : <img src="/icons/ai-copilot.jpg" alt="AI" className="h-full w-full object-cover" />}
                   </div>
 
                   <div
@@ -228,8 +228,8 @@ export default function PlayNexAI() {
 
             {loading && (
               <div className="flex items-center gap-2.5 text-[#64748B] text-xs py-2">
-                <div className="flex h-7 w-7 items-center justify-center rounded-xl bg-slate-100 text-[#2563EB] border border-[#E2E8F0]">
-                  <Bot className="h-3.5 w-3.5 animate-pulse" />
+                <div className="flex h-7 w-7 items-center justify-center rounded-xl overflow-hidden border border-[#E2E8F0] bg-white shrink-0">
+                  <img src="/icons/ai-copilot.jpg" alt="AI" className="h-full w-full object-cover animate-pulse" />
                 </div>
                 <div className="flex items-center gap-1.5 bg-slate-50 border border-[#E2E8F0] rounded-2xl px-3.5 py-2">
                   <Loader2 className="h-3.5 w-3.5 animate-spin text-[#2563EB]" />

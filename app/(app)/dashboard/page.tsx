@@ -21,6 +21,7 @@ interface RoleConfig {
   desc: string;
   href: string;
   icon: any;
+  iconImage?: string;
   iconBg: string;
   badge: string;
 }
@@ -31,6 +32,7 @@ const ROLE_DETAILS: Record<string, RoleConfig> = {
     desc: 'Browse turfs, reserve hourly match slots, enter tournaments, and order sports gear.',
     href: '/player',
     icon: Users,
+    iconImage: '/icons/players.jpg',
     iconBg: 'bg-blue-50 text-blue-600',
     badge: 'ATHLETE',
   },
@@ -47,6 +49,7 @@ const ROLE_DETAILS: Record<string, RoleConfig> = {
     desc: 'Manage your sporting venues, schedule hourly availability, and host championship tournaments.',
     href: '/academy',
     icon: GraduationCap,
+    iconImage: '/icons/academy.jpg',
     iconBg: 'bg-emerald-50 text-emerald-600',
     badge: 'OPERATOR',
   },
@@ -55,6 +58,7 @@ const ROLE_DETAILS: Record<string, RoleConfig> = {
     desc: 'Maintain inventory levels, track customer equipment orders, and manage fulfilled shipments.',
     href: '/store',
     icon: Store,
+    iconImage: '/icons/store.png',
     iconBg: 'bg-purple-50 text-purple-600',
     badge: 'MERCHANT',
   },
@@ -148,8 +152,14 @@ export default async function DashboardPage() {
               >
                 <div>
                   <div className="flex items-start justify-between mb-4">
-                    <div className={`w-12 h-12 rounded-2xl ${config.iconBg} flex items-center justify-center transition group-hover:scale-105`}>
-                      <Icon className="h-6 w-6" />
+                    <div className="w-12 h-12 rounded-2xl overflow-hidden border border-[#E2E8F0] shadow-xs flex items-center justify-center transition group-hover:scale-105 bg-white shrink-0">
+                      {config.iconImage ? (
+                        <img src={config.iconImage} alt={config.title} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className={`w-full h-full ${config.iconBg} flex items-center justify-center`}>
+                          <Icon className="h-6 w-6" />
+                        </div>
+                      )}
                     </div>
                     <span className="badge badge-brand text-[10px] font-bold uppercase">
                       {config.badge}

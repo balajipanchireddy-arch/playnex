@@ -577,11 +577,11 @@ export default function AdminDashboard() {
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'games', label: 'Game Management', icon: Gamepad2, badge: gamesList.length },
-    { id: 'tournaments', label: 'Tournaments', icon: Trophy, badge: tournaments.length },
+    { id: 'tournaments', label: 'Tournaments', icon: Trophy, iconImage: '/icons/tournament.jpg', badge: tournaments.length },
     { id: 'users', label: 'User Management', icon: Users, badge: usersList.length },
-    { id: 'players', label: 'Players', icon: Users, badge: analytics?.totals?.players },
-    { id: 'academies', label: 'Academies', icon: GraduationCap, badge: analytics?.totals?.academies },
-    { id: 'stores', label: 'Stores', icon: Store, badge: analytics?.totals?.stores },
+    { id: 'players', label: 'Players', icon: Users, iconImage: '/icons/players.jpg', badge: analytics?.totals?.players },
+    { id: 'academies', label: 'Academies', icon: GraduationCap, iconImage: '/icons/academy.jpg', badge: analytics?.totals?.academies },
+    { id: 'stores', label: 'Stores', icon: Store, iconImage: '/icons/store.png', badge: analytics?.totals?.stores },
     { id: 'matches', label: 'Matches', icon: Calendar },
     { id: 'notifications', label: 'Notifications', icon: Bell, badge: allNotifications.length },
     { id: 'system', label: 'System Management', icon: Database },
@@ -651,7 +651,15 @@ export default function AdminDashboard() {
                 }`}
               >
                 <div className="flex items-center gap-2.5">
-                  <Icon className={`h-4 w-4 ${isActive ? 'text-[#2563EB]' : 'text-[#64748B]'}`} />
+                  {item.iconImage ? (
+                    <img
+                      src={item.iconImage}
+                      alt={item.label}
+                      className="h-4 w-4 rounded-full object-cover border border-[#E2E8F0] shadow-2xs shrink-0"
+                    />
+                  ) : (
+                    <Icon className={`h-4 w-4 ${isActive ? 'text-[#2563EB]' : 'text-[#64748B]'}`} />
+                  )}
                   <span>{item.label}</span>
                 </div>
                 {item.badge !== undefined && item.badge > 0 && (

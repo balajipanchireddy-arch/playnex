@@ -192,7 +192,7 @@ export default function StoreDashboard() {
         <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-6">
           <div className="flex items-center gap-4">
             <div className="flex h-14 w-14 sm:h-16 sm:w-16 items-center justify-center rounded-2xl bg-blue-50 text-[#2563EB]">
-              <Store className="h-7 w-7" />
+              <img src="/icons/store.png" alt="Store" className="w-full h-full object-cover" />
             </div>
             <div>
               <div className="flex items-center gap-2 mb-1">
@@ -404,7 +404,7 @@ export default function StoreDashboard() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center">
-                <Package className="h-4 w-4" />
+                <img src="/icons/gear.jpg" alt="Gear" className="w-full h-full object-cover" />
               </div>
               <h2 className="text-lg font-extrabold text-slate-900">
                 Inventory Catalog ({filteredProducts.length})

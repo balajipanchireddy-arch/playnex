@@ -303,7 +303,7 @@ export default function AcademyDashboard() {
         <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-6">
           <div className="flex items-center gap-4">
             <div className="flex h-14 w-14 sm:h-16 sm:w-16 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
-              <GraduationCap className="h-7 w-7" />
+              <img src="/icons/academy.jpg" alt="Academy" className="w-full h-full object-cover" />
             </div>
             <div>
               <div className="flex items-center gap-2 mb-1">
@@ -349,7 +349,7 @@ export default function AcademyDashboard() {
               }}
               className="btn btn-sm btn-secondary text-xs"
             >
-              <Trophy className="h-4 w-4 text-amber-500" /> Host Tournament
+              <img src="/icons/tournament.jpg" alt="Tournament" className="w-full h-full object-cover" /> Host Tournament
             </button>
           </div>
         </div>
@@ -511,7 +511,7 @@ export default function AcademyDashboard() {
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center font-bold">
-                <Trophy className="h-4 w-4" />
+                <img src="/icons/tournament.jpg" alt="Tournament" className="w-full h-full object-cover" />
               </div>
               <h2 className="text-base font-bold text-slate-900">Host New Tournament</h2>
             </div>
@@ -655,7 +655,7 @@ export default function AcademyDashboard() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-teal-50 text-teal-700 flex items-center justify-center">
-              <MapPin className="h-4 w-4" />
+              <img src="/icons/ground.jpg" alt="Ground" className="w-full h-full object-cover" />
             </div>
             <h2 className="text-lg font-extrabold text-slate-900">
               Your Grounds & Live Slot Booking ({facilities.length})
@@ -810,7 +810,7 @@ export default function AcademyDashboard() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center">
-              <Trophy className="h-4 w-4" />
+              <img src="/icons/tournament.jpg" alt="Tournament" className="w-full h-full object-cover" />
             </div>
             <h2 className="text-lg font-extrabold text-slate-900">
               Active Tournaments ({tournaments.length})

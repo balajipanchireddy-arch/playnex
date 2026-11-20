@@ -20,7 +20,7 @@ import {
 const ROLES = [
   {
     key: 'player',
-    icon: Users,
+    iconImage: '/icons/players.jpg',
     title: 'Player & Athlete Arena',
     desc: 'Discover nearby turfs, book instant hourly slots, enter tournaments, and team up with local players.',
     badge: 'Popular',
@@ -29,7 +29,7 @@ const ROLES = [
   },
   {
     key: 'academy',
-    icon: GraduationCap,
+    iconImage: '/icons/academy.jpg',
     title: 'Academy & Venues',
     desc: 'List your sports facilities, manage live hourly time-slots, toggle arena closures, and host championships.',
     badge: 'For Operators',
@@ -38,7 +38,7 @@ const ROLES = [
   },
   {
     key: 'store',
-    icon: Store,
+    iconImage: '/icons/store.png',
     title: 'Pro Sports Store',
     desc: 'Showcase authentic sporting gear, manage live stock levels, and fulfill orders directly to local athletes.',
     badge: 'Merchants',
@@ -94,22 +94,22 @@ const SHOWCASE_GAMES = [
 
 const FEATURES = [
   {
-    icon: MapPin,
+    iconImage: '/icons/ground.jpg',
     title: 'Live Ground Booking',
     desc: 'Browse multi-sport turfs with real-time hourly availability matrices from morning to night.'
   },
   {
-    icon: Trophy,
+    iconImage: '/icons/tournament.jpg',
     title: 'Competitive Tournaments',
     desc: 'Register for local tournaments, cups, and esports leagues with transparent bracket tracking.'
   },
   {
-    icon: Package,
+    iconImage: '/icons/gear.jpg',
     title: 'Curated Pro Gear',
     desc: 'Order verified equipment, apparel, and accessories directly from trusted merchant sports shops.'
   },
   {
-    icon: Bot,
+    iconImage: '/icons/ai-copilot.jpg',
     title: 'PlayNex AI Co-Pilot',
     desc: 'Intelligent multi-role assistant to guide tournament rules, booking management, and live stats.'
   }
@@ -303,7 +303,7 @@ export default function LandingPage() {
 
             <div className="grid gap-6 md:grid-cols-3">
               {ROLES.map((r) => {
-                const Icon = r.icon;
+
                 return (
                   <Link
                     key={r.key}
@@ -312,8 +312,8 @@ export default function LandingPage() {
                   >
                     <div>
                       <div className="flex items-center justify-between mb-5">
-                        <div className={`w-12 h-12 rounded-2xl ${r.iconBg} flex items-center justify-center transition group-hover:scale-105`}>
-                          <Icon className="h-6 w-6" />
+                        <div className="w-12 h-12 rounded-2xl overflow-hidden border border-[#E2E8F0] shadow-xs flex items-center justify-center transition group-hover:scale-105 bg-white shrink-0">
+                          <img src={r.iconImage} alt={r.title} className="w-full h-full object-cover" />
                         </div>
                         <span className="badge badge-brand text-[10px] font-bold uppercase">
                           {r.badge}
@@ -365,11 +365,10 @@ export default function LandingPage() {
 
             <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
               {FEATURES.map((f, i) => {
-                const Icon = f.icon;
                 return (
                   <div key={i} className="rounded-2xl border border-[#E2E8F0] bg-[#F5F7FA] p-6 transition hover:bg-white hover:shadow-sm">
-                    <div className="w-10 h-10 rounded-xl bg-blue-50 text-[#2563EB] border border-blue-100 flex items-center justify-center mb-4">
-                      <Icon className="h-5 w-5" />
+                    <div className="w-12 h-12 rounded-xl overflow-hidden border border-[#E2E8F0] shadow-xs mb-4 flex items-center justify-center bg-white shrink-0">
+                      <img src={f.iconImage} alt={f.title} className="w-full h-full object-cover" />
                     </div>
                     <h3 className="font-bold text-base text-[#172033]">{f.title}</h3>
                     <p className="text-xs text-[#64748B] mt-2 leading-relaxed">{f.desc}</p>
