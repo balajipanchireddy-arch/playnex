@@ -92,6 +92,22 @@ export default function AcademyDashboard() {
     }
   }
 
+  async function handleResubmitApproval() {
+    try {
+      const res = await fetch('/api/partners/resubmit', { method: 'POST' });
+      const data = await res.json();
+
+      if (data.ok) {
+        notify('ok', 'Application resubmitted. Waiting for Admin review.');
+        await loadData();
+      } else {
+        notify('err', data.error?.message || 'Could not resubmit application.');
+      }
+    } catch {
+      notify('err', 'Network error while resubmitting application.');
+    }
+  }
+
   async function loadData() {
     try {
       const [acadRes, facRes, tourRes, gamesRes] = await Promise.all([
@@ -372,13 +388,34 @@ export default function AcademyDashboard() {
 
       {/* Verification Notice Banner */}
       {academy && academy.verificationStatus !== 'approved' && (
-        <div className="rounded-2xl border border-amber-200/60 bg-amber-50 p-4 text-xs text-amber-900 flex items-start gap-3 shadow-xs">
-          <Clock className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
-          <div>
-            <p className="font-bold">Academy Verification in Progress</p>
-            <p className="mt-0.5 text-amber-700">
-              Your sports academy profile is currently pending administrator verification. Once verified by an admin, your venue profile and grounds will be marked verified across PlayNex.
+        <div className={`rounded-2xl p-4 text-xs flex items-start gap-3 shadow-xs ${
+          academy.verificationStatus === 'rejected'
+            ? 'border border-rose-200 bg-rose-50 text-rose-900'
+            : 'border border-amber-200/60 bg-amber-50 text-amber-900'
+        }`}>
+          <Clock className={`h-4 w-4 shrink-0 mt-0.5 ${
+            academy.verificationStatus === 'rejected' ? 'text-rose-600' : 'text-amber-600'
+          }`} />
+          <div className="flex-1">
+            <p className="font-bold">
+              {academy.verificationStatus === 'rejected'
+                ? 'Academy Verification Rejected'
+                : 'Academy Verification Pending'}
             </p>
+            <p className="mt-0.5">
+              {academy.verificationStatus === 'rejected'
+                ? 'Your application was rejected. You can request another review by resubmitting it.'
+                : 'Your sports academy profile is awaiting administrator verification. Grounds and tournament publishing remain restricted until approval.'}
+            </p>
+            {academy.verificationStatus === 'rejected' && (
+              <button
+                type="button"
+                onClick={handleResubmitApproval}
+                className="btn btn-sm btn-emerald mt-3"
+              >
+                Request Approval Again
+              </button>
+            )}
           </div>
         </div>
       )}

@@ -47,6 +47,22 @@ export default function StoreDashboard() {
     }, 4500);
   }
 
+  async function handleResubmitApproval() {
+    try {
+      const res = await fetch('/api/partners/resubmit', { method: 'POST' });
+      const data = await res.json();
+
+      if (data.ok) {
+        notify('ok', 'Application resubmitted. Waiting for Admin review.');
+        await loadData();
+      } else {
+        notify('err', data.error?.message || 'Could not resubmit application.');
+      }
+    } catch {
+      notify('err', 'Network error while resubmitting application.');
+    }
+  }
+
   async function loadData() {
     try {
       const [storeData, prodData, orderData, gamesData] = await Promise.all([
@@ -204,7 +220,11 @@ export default function StoreDashboard() {
                     ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                     : 'bg-amber-50 text-amber-700 border border-amber-200'
                 }`}>
-                  {isApproved ? 'Verified Partner' : 'Verification Pending'}
+                  {isApproved
+                    ? 'Verified Partner'
+                    : store.verificationStatus === 'rejected'
+                      ? 'Verification Rejected'
+                      : 'Verification Pending'}
                 </span>
               </div>
               <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[#172033]">
@@ -227,6 +247,34 @@ export default function StoreDashboard() {
           </div>
         </div>
       </div>
+
+      {store.verificationStatus !== 'approved' && (
+        <div className={`rounded-2xl p-4 text-xs ${
+          store.verificationStatus === 'rejected'
+            ? 'border border-rose-200 bg-rose-50 text-rose-900'
+            : 'border border-amber-200 bg-amber-50 text-amber-900'
+        }`}>
+          <p className="font-bold">
+            {store.verificationStatus === 'rejected'
+              ? 'Store Verification Rejected'
+              : 'Store Verification Pending'}
+          </p>
+          <p className="mt-1">
+            {store.verificationStatus === 'rejected'
+              ? 'Your application was rejected. You can request another review by resubmitting it.'
+              : 'Your store is awaiting administrator verification. Product creation and editing remain restricted until approval.'}
+          </p>
+          {store.verificationStatus === 'rejected' && (
+            <button
+              type="button"
+              onClick={handleResubmitApproval}
+              className="btn btn-sm btn-emerald mt-3"
+            >
+              Request Approval Again
+            </button>
+          )}
+        </div>
+      )}
 
       {/* KPI Stats Grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
