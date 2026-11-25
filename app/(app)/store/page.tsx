@@ -22,6 +22,19 @@ import {
 
 export default function StoreDashboard() {
   const [store, setStore] = useState<any>(null);
+  const [isAdminView, setIsAdminView] = useState(false);
+  const [allStores, setAllStores] = useState<any[]>([]);
+  const [selectedStoreId, setSelectedStoreId] = useState<string>('all');
+  const [needsRegistration, setNeedsRegistration] = useState(false);
+
+  // Store registration form state
+  const [regStoreName, setRegStoreName] = useState('');
+  const [regAddress, setRegAddress] = useState('');
+  const [regContact, setRegContact] = useState('');
+  const [regDescription, setRegDescription] = useState('');
+  const [registeringStore, setRegisteringStore] = useState(false);
+  const [showRegisterModal, setShowRegisterModal] = useState(false);
+
   const [products, setProducts] = useState<any[]>([]);
   const [orders, setOrders] = useState<any[]>([]);
   const [games, setGames] = useState<any[]>([]);
@@ -36,6 +49,7 @@ export default function StoreDashboard() {
   const [productImageUrl, setProductImageUrl] = useState('');
   const [price, setPrice] = useState('');
   const [qty, setQty] = useState('1');
+  const [targetStoreId, setTargetStoreId] = useState('');
   const [submittingProduct, setSubmittingProduct] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   const [filterSport, setFilterSport] = useState('All');
@@ -63,17 +77,37 @@ export default function StoreDashboard() {
     }
   }
 
-  async function loadData() {
+  async function loadData(storeFilter = selectedStoreId) {
     try {
+      const storeQuery = storeFilter && storeFilter !== 'all' ? `?storeId=${encodeURIComponent(storeFilter)}` : '';
       const [storeData, prodData, orderData, gamesData] = await Promise.all([
         fetch('/api/stores/me').then(r => r.json()),
-        fetch('/api/stores/me/products').then(r => r.json()),
-        fetch('/api/stores/me/orders').then(r => r.json()),
+        fetch(`/api/stores/me/products${storeQuery}`).then(r => r.json()),
+        fetch(`/api/stores/me/orders${storeQuery}`).then(r => r.json()),
         fetch('/api/games').then(r => r.json())
       ]);
-      if (storeData.ok) setStore(storeData.data);
-      if (prodData.ok) setProducts(prodData.data);
-      if (orderData.ok) setOrders(orderData.data);
+      if (storeData.ok && storeData.data) {
+        if (storeData.data.isAdmin) {
+          setIsAdminView(true);
+          setStore(null);
+          setNeedsRegistration(false);
+          const storesList = storeData.data.stores || [];
+          setAllStores(storesList);
+          if (!targetStoreId && storesList.length > 0) {
+            setTargetStoreId(storesList[0].id);
+          }
+        } else if (storeData.data.needsRegistration) {
+          setIsAdminView(false);
+          setStore(null);
+          setNeedsRegistration(true);
+        } else {
+          setIsAdminView(false);
+          setNeedsRegistration(false);
+          setStore(storeData.data);
+        }
+      }
+      if (prodData.ok) setProducts(prodData.data || []);
+      if (orderData.ok) setOrders(orderData.data || []);
       if (gamesData.ok) setGames(gamesData.data || []);
     } catch {
       notify('err', 'Could not load store data.');
@@ -85,6 +119,39 @@ export default function StoreDashboard() {
   useEffect(() => {
     loadData();
   }, []);
+
+  async function handleRegisterStore(e: React.FormEvent) {
+    e.preventDefault();
+    setRegisteringStore(true);
+    try {
+      const res = await fetch('/api/stores/me', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          storeName: regStoreName,
+          address: regAddress,
+          contact: regContact,
+          description: regDescription,
+        }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        notify('ok', `Store "${regStoreName}" registered successfully!`);
+        setRegStoreName('');
+        setRegAddress('');
+        setRegContact('');
+        setRegDescription('');
+        setShowRegisterModal(false);
+        await loadData();
+      } else {
+        notify('err', data.error?.message || 'Failed to register store.');
+      }
+    } catch {
+      notify('err', 'Network error registering store.');
+    } finally {
+      setRegisteringStore(false);
+    }
+  }
 
   async function handleAddProduct(e: React.FormEvent) {
     e.preventDefault();
@@ -101,6 +168,7 @@ export default function StoreDashboard() {
           price: Number(price),
           qty: Number(qty),
           image: productImageUrl.trim(),
+          ...(isAdminView && targetStoreId ? { storeId: targetStoreId } : {}),
         }),
       });
       const data = await res.json();
@@ -177,12 +245,73 @@ export default function StoreDashboard() {
     );
   }
 
-  if (!store) {
+  if (!isAdminView && (needsRegistration || !store)) {
     return (
-      <div className="card text-center py-12 max-w-md mx-auto">
-        <AlertCircle className="h-10 w-10 text-rose-500 mx-auto mb-3" />
-        <h3 className="text-lg font-bold text-slate-900">Store Profile Not Found</h3>
-        <p className="text-xs text-slate-500 mt-1">Please make sure your account is registered as a store partner.</p>
+      <div className="max-w-lg mx-auto space-y-6">
+        <Toast message={notification} onClose={() => setNotification(null)} />
+        <div className="card p-6 sm:p-8 border-[#E5E7EB] bg-white">
+          <div className="flex items-center gap-3 mb-5">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#E8F5EE] text-[#16A36A] shrink-0">
+              <Store className="h-6 w-6" />
+            </div>
+            <div>
+              <h2 className="text-xl font-extrabold text-[#172033]">Register Your Sports Store</h2>
+              <p className="text-xs text-[#667085] mt-0.5">
+                Set up your PlayNex store profile to list sports equipment, manage inventory, and fulfill orders.
+              </p>
+            </div>
+          </div>
+
+          <form onSubmit={handleRegisterStore} className="space-y-4">
+            <div>
+              <label className="label">Store Name *</label>
+              <input
+                required
+                value={regStoreName}
+                onChange={(e) => setRegStoreName(e.target.value)}
+                className="input"
+                placeholder="e.g. Apex Sports Gear"
+              />
+            </div>
+            <div>
+              <label className="label">Store Address / City *</label>
+              <input
+                required
+                value={regAddress}
+                onChange={(e) => setRegAddress(e.target.value)}
+                className="input"
+                placeholder="e.g. 42 Stadium Road, Visakhapatnam"
+              />
+            </div>
+            <div>
+              <label className="label">Contact Phone *</label>
+              <input
+                required
+                value={regContact}
+                onChange={(e) => setRegContact(e.target.value)}
+                className="input"
+                placeholder="e.g. +91 98765 43210"
+              />
+            </div>
+            <div>
+              <label className="label">Store Description (Optional)</label>
+              <textarea
+                rows={3}
+                value={regDescription}
+                onChange={(e) => setRegDescription(e.target.value)}
+                className="input"
+                placeholder="Tell players what gear, apparel, and brands you carry..."
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={registeringStore}
+              className="btn w-full"
+            >
+              {registeringStore ? 'Creating Store Profile...' : 'Register Store'}
+            </button>
+          </form>
+        </div>
       </div>
     );
   }
@@ -192,7 +321,7 @@ export default function StoreDashboard() {
   const outOfStock = products.filter(p => p.qty === 0).length;
   const lowStock = products.filter(p => p.qty > 0 && p.qty <= 2).length;
 
-  const isApproved = store.verificationStatus === 'approved';
+  const isApproved = isAdminView || store?.verificationStatus === 'approved';
 
   const filteredProducts = products.filter(p =>
     filterSport === 'All' || p.sport?.toLowerCase() === filterSport.toLowerCase()
@@ -204,39 +333,52 @@ export default function StoreDashboard() {
       <Toast message={notification} onClose={() => setNotification(null)} />
 
       {/* Store Hero Banner */}
-      <div className="card bg-white text-[#172033] border-[#E2E8F0] p-6 sm:p-8 relative overflow-hidden shadow-sm">
+      <div className="card bg-white text-[#172033] border-[#E5E7EB] p-6 sm:p-8 relative overflow-hidden shadow-sm">
         <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-6">
           <div className="flex items-center gap-4">
-            <div className="flex h-14 w-14 sm:h-16 sm:w-16 items-center justify-center rounded-2xl bg-blue-50 text-[#2563EB]">
+            <div className="flex h-14 w-14 sm:h-16 sm:w-16 items-center justify-center rounded-2xl bg-[#E8F5EE] text-[#16A36A] overflow-hidden shrink-0">
               <img src="/icons/store.png" alt="Store" className="w-full h-full object-cover" />
             </div>
             <div>
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-[#64748B]">
-                  Sports Merchant Hub
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#667085]">
+                  {isAdminView ? 'Platform Store Administration' : 'Sports Merchant Hub'}
                 </span>
                 <span className={`badge text-[10px] font-bold uppercase ${
                   isApproved
                     ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                     : 'bg-amber-50 text-amber-700 border border-amber-200'
                 }`}>
-                  {isApproved
-                    ? 'Verified Partner'
-                    : store.verificationStatus === 'rejected'
-                      ? 'Verification Rejected'
-                      : 'Verification Pending'}
+                  {isAdminView
+                    ? 'Admin Full Access'
+                    : isApproved
+                      ? 'Verified Partner'
+                      : store?.verificationStatus === 'rejected'
+                        ? 'Verification Rejected'
+                        : 'Verification Pending'}
                 </span>
               </div>
               <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[#172033]">
-                {store.storeName}
+                {isAdminView ? 'Admin Store Dashboard' : store?.storeName}
               </h1>
-              <p className="text-xs text-[#64748B] mt-0.5">
-                {store.address || 'Authorized Sports Equipment & Apparel Provider'}
+              <p className="text-xs text-[#667085] mt-0.5">
+                {isAdminView
+                  ? `Managing ${allStores.length} registered store(s), ${products.length} product(s), and ${orders.length} order(s) across PlayNex.`
+                  : (store?.address || 'Authorized Sports Equipment & Apparel Provider')}
               </p>
             </div>
           </div>
 
-          <div>
+          <div className="flex flex-wrap items-center gap-2">
+            {isAdminView && (
+              <button
+                onClick={() => setShowRegisterModal(!showRegisterModal)}
+                className="btn-secondary btn-sm text-xs"
+              >
+                <Store className="h-4 w-4" />
+                Create Store
+              </button>
+            )}
             <button
               onClick={() => setShowAddForm(!showAddForm)}
               className="btn btn-sm btn-emerald text-xs"
@@ -248,7 +390,111 @@ export default function StoreDashboard() {
         </div>
       </div>
 
-      {store.verificationStatus !== 'approved' && (
+      {/* Admin: Create Store Modal/Panel */}
+      {isAdminView && showRegisterModal && (
+        <div className="card border-2 border-[#16A36A]/30 bg-[#E8F5EE]/20 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-base font-bold text-[#172033]">Register New Platform Store</h2>
+            <button onClick={() => setShowRegisterModal(false)} className="text-[#667085] hover:text-[#172033]">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <form onSubmit={handleRegisterStore} className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="label">Store Name *</label>
+              <input required value={regStoreName} onChange={(e) => setRegStoreName(e.target.value)} className="input" placeholder="Store name" />
+            </div>
+            <div>
+              <label className="label">Address *</label>
+              <input required value={regAddress} onChange={(e) => setRegAddress(e.target.value)} className="input" placeholder="City / Address" />
+            </div>
+            <div>
+              <label className="label">Contact *</label>
+              <input required value={regContact} onChange={(e) => setRegContact(e.target.value)} className="input" placeholder="+91 ..." />
+            </div>
+            <div className="md:col-span-3 flex justify-end gap-2">
+              <button type="button" onClick={() => setShowRegisterModal(false)} className="btn-secondary btn-sm text-xs">Cancel</button>
+              <button type="submit" disabled={registeringStore} className="btn btn-sm text-xs">
+                {registeringStore ? 'Creating...' : 'Create Store'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Admin: Registered Stores Directory */}
+      {isAdminView && (
+        <div className="card p-6 border-[#E5E7EB]">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+            <div>
+              <h2 className="text-base font-extrabold text-[#172033]">
+                Registered Stores ({allStores.length})
+              </h2>
+              <p className="text-xs text-[#667085]">
+                Select a store to filter its products and orders, or view all stores at once.
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                setSelectedStoreId('all');
+                loadData('all');
+              }}
+              className={`btn-sm text-xs rounded-xl border font-semibold px-3 py-1.5 ${
+                selectedStoreId === 'all'
+                  ? 'bg-[#101828] text-white border-[#101828]'
+                  : 'bg-white text-[#172033] border-[#E5E7EB]'
+              }`}
+            >
+              All Stores
+            </button>
+          </div>
+
+          {allStores.length === 0 ? (
+            <p className="text-xs text-[#667085] py-4">No stores registered yet. Click &quot;Create Store&quot; above to add one.</p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {allStores.map((s) => {
+                const isSelected = selectedStoreId === s.id;
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedStoreId(s.id);
+                      setTargetStoreId(s.id);
+                      loadData(s.id);
+                    }}
+                    className={`text-left rounded-xl border p-4 transition ${
+                      isSelected
+                        ? 'border-[#16A36A] bg-[#E8F5EE]/40 shadow-xs'
+                        : 'border-[#E5E7EB] bg-white hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <h3 className="font-bold text-sm text-[#172033] truncate">{s.storeName || 'Unnamed Store'}</h3>
+                      <span
+                        className={`badge text-[10px] uppercase ${
+                          s.verificationStatus === 'approved'
+                            ? 'badge-ok'
+                            : s.verificationStatus === 'rejected'
+                            ? 'badge-bad'
+                            : 'badge-warn'
+                        }`}
+                      >
+                        {s.verificationStatus || 'pending'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-[#667085] mt-1 truncate">{s.address || 'No address'}</p>
+                    {s.contact && <p className="text-[11px] text-[#667085] mt-0.5">{s.contact}</p>}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {!isAdminView && store && store.verificationStatus !== 'approved' && (
         <div className={`rounded-2xl p-4 text-xs ${
           store.verificationStatus === 'rejected'
             ? 'border border-rose-200 bg-rose-50 text-rose-900'
@@ -334,6 +580,22 @@ export default function StoreDashboard() {
           </div>
 
           <form onSubmit={handleAddProduct} className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            {isAdminView && allStores.length > 0 && (
+              <div className="md:col-span-4">
+                <label className="label">Target Store *</label>
+                <select
+                  value={targetStoreId}
+                  onChange={(e) => setTargetStoreId(e.target.value)}
+                  className="input"
+                >
+                  {allStores.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.storeName} ({s.verificationStatus || 'pending'})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div className="md:col-span-2">
               <label className="label">Item Name</label>
               <input

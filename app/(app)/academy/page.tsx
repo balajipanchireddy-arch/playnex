@@ -102,6 +102,7 @@ export default function AcademyDashboard() {
   // Tournament Form State
   const [tName, setTName] = useState('');
   const [tSport, setTSport] = useState('Basketball');
+  const [tCustomSport, setTCustomSport] = useState('');
   const [tCategory, setTCategory] = useState('Open Championship');
   const [tDate, setTDate] = useState('');
   const [tDeadline, setTDeadline] = useState('');
@@ -277,6 +278,9 @@ export default function AcademyDashboard() {
   // Tournament handlers ----------------------------------------------------
   async function handleAddTournament(e: React.FormEvent) {
     e.preventDefault();
+    const resolvedTSport = await resolveCustomSportIfNeeded(tSport, tCustomSport);
+    if (!resolvedTSport) return;
+
     setSubmittingTournament(true);
     try {
       const res = await fetch('/api/academies/me/events', {
@@ -284,7 +288,7 @@ export default function AcademyDashboard() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: tName,
-          sport: tSport,
+          sport: resolvedTSport,
           category: tCategory,
           date: tDate,
           registrationDeadline: tDeadline || tDate,
@@ -304,6 +308,7 @@ export default function AcademyDashboard() {
           `Tournament "${tName}" published! Athletes can now view and register.`
         );
         setTName('');
+        setTCustomSport('');
         setTDate('');
         setTDeadline('');
         setTLoc('');
@@ -752,22 +757,26 @@ export default function AcademyDashboard() {
                 onChange={(e) => setTSport(e.target.value)}
                 className="input"
               >
-                {games.length > 0 ? (
-                  games.map((g) => (
-                    <option key={g.id} value={g.name}>
-                      {g.name} ({g.category})
-                    </option>
-                  ))
-                ) : (
-                  <>
-                    <option>Badminton</option>
-                    <option>Football</option>
-                    <option>Cricket</option>
-                    <option>Basketball</option>
-                    <option>Tennis</option>
-                  </>
-                )}
+                {Array.from(
+                  new Set([
+                    ...facilities.map((f) => (f.sport || '').trim()).filter(Boolean),
+                    ...games.map((g) => (g.name || '').trim()).filter(Boolean),
+                    ...PREDEFINED_SPORTS.filter((s) => s !== 'Other / Custom Sport'),
+                  ])
+                ).map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+                <option value="Other / Custom Sport">Other / Custom Sport</option>
               </select>
+              {tSport === 'Other / Custom Sport' && (
+                <input
+                  required
+                  value={tCustomSport}
+                  onChange={(e) => setTCustomSport(e.target.value)}
+                  className="input mt-2"
+                  placeholder="Enter custom sport name"
+                />
+              )}
             </div>
             <div>
               <label className="label">Category</label>

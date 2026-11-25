@@ -1544,10 +1544,18 @@ export default function AdminDashboard() {
                   onChange={(e) => setTSport(e.target.value)}
                   className="input"
                 >
-                  <option>Basketball</option>
-                  <option>Football</option>
-                  <option>Cricket</option>
-                  <option>Tennis</option>
+                  {Array.from(
+                    new Set([
+                      ...gamesList.filter((g) => g.status !== 'inactive').map((g) => (g.name || '').trim()).filter(Boolean),
+                      'Basketball',
+                      'Football',
+                      'Cricket',
+                      'Tennis',
+                      'Badminton',
+                    ])
+                  ).map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
                 </select>
               </div>
 

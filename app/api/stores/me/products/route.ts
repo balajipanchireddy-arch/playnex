@@ -6,6 +6,7 @@ import { isAdmin } from '@/lib/auth/admin';
 import { ok, fail } from '@/lib/api/response';
 import { dispatchNotification } from '@/lib/notifications/dispatch';
 import { logActivity } from '@/lib/firebase/activity';
+import { findUserStoreDoc } from '@/lib/stores/resolve';
 
 const Body = z.object({
   name: z.string().min(2),
@@ -15,10 +16,13 @@ const Body = z.object({
   description: z.string().optional().default(''),
   category: z.string().optional().default('Equipment'),
   image: z.string().optional().default(''),
+  storeId: z.string().optional(),
 });
 
 async function isStoreOrAdmin(uid: string) {
-  const snap = await adminDb.collection('userRoles')
+  if (await isAdmin(uid)) return true;
+  const snap = await adminDb
+    .collection('userRoles')
     .where('userId', '==', uid)
     .where('status', '==', 'active')
     .get();
@@ -27,27 +31,51 @@ async function isStoreOrAdmin(uid: string) {
 }
 
 async function isApprovedStore(uid: string): Promise<boolean> {
-  const roleSnap = await adminDb.collection('userRoles')
-    .where('userId', '==', uid)
-    .where('roleId', '==', 'store')
-    .where('status', '==', 'active')
-    .limit(1)
-    .get();
-
-  if (roleSnap.empty) return false;
-
-  const storeDoc = await adminDb.collection('stores').doc(uid).get();
-  return storeDoc.exists &&
-    storeDoc.data()?.verificationStatus === 'approved';
+  const storeDoc = await findUserStoreDoc(uid);
+  return Boolean(storeDoc && storeDoc.data()?.verificationStatus === 'approved');
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const session = await verifySession();
   if (!session) return fail('unauthorized', 'Login required', 401);
+
+  const { searchParams } = new URL(req.url);
+  const requestedStoreId = searchParams.get('storeId');
+
   try {
-    const snap = await adminDb.collection('products').where('storeId', '==', session.uid).get();
-    return ok(snap.docs.map((d: any) => ({ id: d.id, ...d.data() })));
-  } catch (e: any) { return fail('server_error', e.message, 500); }
+    const adminUser = await isAdmin(session.uid);
+
+    if (adminUser) {
+      let snap;
+      if (requestedStoreId && requestedStoreId !== 'all') {
+        snap = await adminDb
+          .collection('products')
+          .where('storeId', '==', requestedStoreId)
+          .get();
+      } else {
+        snap = await adminDb.collection('products').get();
+      }
+      const products = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+      products.sort((a: any, b: any) => (b.createdAt || 0) - (a.createdAt || 0));
+      return ok(products);
+    }
+
+    const storeDoc = await findUserStoreDoc(session.uid);
+    if (!storeDoc) {
+      return ok([]);
+    }
+
+    const snap = await adminDb
+      .collection('products')
+      .where('storeId', '==', storeDoc.id)
+      .get();
+
+    const products = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+    products.sort((a: any, b: any) => (b.createdAt || 0) - (a.createdAt || 0));
+    return ok(products);
+  } catch (e: any) {
+    return fail('server_error', e.message, 500);
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -56,19 +84,46 @@ export async function POST(req: NextRequest) {
 
   const adminUser = await isAdmin(session.uid);
   if (!adminUser && !(await isApprovedStore(session.uid))) {
-    return fail('forbidden', 'Your store must be approved by PlayNex Admin before adding products.', 403);
+    return fail(
+      'forbidden',
+      'Your store must be approved by PlayNex Admin before adding products.',
+      403
+    );
   }
 
   try {
     const parsed = Body.safeParse(await req.json());
     if (!parsed.success) return fail('invalid', 'Invalid input payload', 400);
-    const { name, sport, price, qty, description, category, image } = parsed.data;
+    const { name, sport, price, qty, description, category, image, storeId } = parsed.data;
 
-    const storeDoc = await adminDb.collection('stores').doc(session.uid).get();
-    const storeName = storeDoc.exists ? storeDoc.data()?.storeName : 'Verified Store';
+    let targetStoreId = session.uid;
+    let storeName = 'PlayNex Official Store';
+
+    if (adminUser && storeId) {
+      const targetDoc = await adminDb.collection('stores').doc(storeId).get();
+      if (!targetDoc.exists) {
+        return fail('not_found', 'Selected store not found', 404);
+      }
+      targetStoreId = targetDoc.id;
+      storeName = targetDoc.data()?.storeName || 'Verified Store';
+    } else if (!adminUser) {
+      const callerStore = await findUserStoreDoc(session.uid);
+      if (!callerStore) {
+        return fail('not_found', 'Store profile not found', 404);
+      }
+      targetStoreId = callerStore.id;
+      storeName = callerStore.data()?.storeName || 'Verified Store';
+    } else {
+      // Admin adding without selecting a specific store: attach to first existing store if any, or 'playnex_admin_store'
+      const anyStore = await adminDb.collection('stores').limit(1).get();
+      if (!anyStore.empty) {
+        targetStoreId = anyStore.docs[0].id;
+        storeName = anyStore.docs[0].data()?.storeName || 'PlayNex Store';
+      }
+    }
 
     const docRef = await adminDb.collection('products').add({
-      storeId: session.uid,
+      storeId: targetStoreId,
       storeName,
       name,
       sport,
@@ -79,7 +134,7 @@ export async function POST(req: NextRequest) {
       image: image || '',
       rating: 0,
       ratingCount: 0,
-      createdAt: Date.now()
+      createdAt: Date.now(),
     });
 
     await logActivity({
@@ -91,8 +146,6 @@ export async function POST(req: NextRequest) {
       details: `${storeName} added gear "${name}" (${sport}) at ₹${price}`,
     });
 
-    // AUTOMATIC STORE-TO-PLAYER NOTIFICATION:
-    // Only inform players interested in this sport if in stock
     if (qty > 0) {
       await dispatchNotification({
         title: `New Gear Available: ${name}`,
@@ -107,13 +160,15 @@ export async function POST(req: NextRequest) {
     }
 
     return ok({ success: true, id: docRef.id });
-  } catch (e: any) { return fail('server_error', e.message, 500); }
+  } catch (e: any) {
+    return fail('server_error', e.message, 500);
+  }
 }
 
 const PatchBody = z.object({
   productId: z.string().min(1),
   qty: z.number().optional(),
-  price: z.number().optional()
+  price: z.number().optional(),
 });
 
 export async function PATCH(req: NextRequest) {
@@ -122,7 +177,11 @@ export async function PATCH(req: NextRequest) {
 
   const adminUser = await isAdmin(session.uid);
   if (!adminUser && !(await isApprovedStore(session.uid))) {
-    return fail('forbidden', 'Your store must be approved by PlayNex Admin before editing products.', 403);
+    return fail(
+      'forbidden',
+      'Your store must be approved by PlayNex Admin before editing products.',
+      403
+    );
   }
 
   try {
@@ -133,16 +192,21 @@ export async function PATCH(req: NextRequest) {
     const prodRef = adminDb.collection('products').doc(productId);
     const prodSnap = await prodRef.get();
     if (!prodSnap.exists) return fail('not_found', 'Product not found', 404);
-    if (prodSnap.data().storeId !== session.uid) return fail('forbidden', 'Unauthorized to modify this product', 403);
 
-    const existing = prodSnap.data();
-    const updates: any = {};
+    const existing = prodSnap.data()!;
+    if (!adminUser) {
+      const callerStore = await findUserStoreDoc(session.uid);
+      if (!callerStore || existing.storeId !== callerStore.id) {
+        return fail('forbidden', 'Unauthorized to modify this product', 403);
+      }
+    }
+
+    const updates: any = { updatedAt: Date.now() };
     if (qty !== undefined) updates.qty = Math.max(0, qty);
     if (price !== undefined) updates.price = price;
 
     await prodRef.update(updates);
 
-    // If price dropped meaningfully, notify interested players
     if (price !== undefined && price < existing.price) {
       await dispatchNotification({
         title: `Price Drop: ${existing.name}`,
@@ -157,7 +221,9 @@ export async function PATCH(req: NextRequest) {
     }
 
     return ok({ success: true });
-  } catch (e: any) { return fail('server_error', e.message, 500); }
+  } catch (e: any) {
+    return fail('server_error', e.message, 500);
+  }
 }
 
 export async function DELETE(req: NextRequest) {
@@ -172,14 +238,17 @@ export async function DELETE(req: NextRequest) {
     const prodSnap = await prodRef.get();
     if (!prodSnap.exists) return fail('not_found', 'Product not found', 404);
 
-    const prodData = prodSnap.data();
+    const prodData = prodSnap.data()!;
     const canDelete = await isStoreOrAdmin(session.uid);
     const adminUser = await isAdmin(session.uid);
-    if (!canDelete || (prodData.storeId !== session.uid && !adminUser)) {
-      return fail('forbidden', 'Unauthorized to delete this product', 403);
+
+    if (!adminUser) {
+      const callerStore = await findUserStoreDoc(session.uid);
+      if (!canDelete || !callerStore || prodData.storeId !== callerStore.id) {
+        return fail('forbidden', 'Unauthorized to delete this product', 403);
+      }
     }
 
-    // Delete product document (orders retain snapshot copies for financial auditing)
     await prodRef.delete();
 
     await logActivity({

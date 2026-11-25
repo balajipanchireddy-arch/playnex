@@ -90,6 +90,30 @@ export async function POST(req: NextRequest) {
       createdAt: Date.now()
     });
 
+    // Ensure the ground's sport exists in the `games` catalog (deduplicated by slug)
+    const sportTrimmed = sport.trim();
+    const sportSlug = sportTrimmed.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    if (sportSlug) {
+      const existingGame = await adminDb
+        .collection('games')
+        .where('slug', '==', sportSlug)
+        .limit(1)
+        .get();
+      if (existingGame.empty) {
+        const nowIso = new Date().toISOString();
+        await adminDb.collection('games').add({
+          name: sportTrimmed,
+          slug: sportSlug,
+          category: 'Ground Sport',
+          status: 'active',
+          isCustom: true,
+          createdBy: session.uid,
+          createdAt: nowIso,
+          updatedAt: nowIso,
+        });
+      }
+    }
+
     await logActivity({
       userId: session.uid,
       userName: academyName,

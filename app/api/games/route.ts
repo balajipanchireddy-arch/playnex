@@ -43,12 +43,41 @@ export async function GET(req: NextRequest) {
   const includeAll = searchParams.get('all') === 'true';
 
   try {
-    const snap = await adminDb.collection('games').get();
+    const [snap, facSnap] = await Promise.all([
+      adminDb.collection('games').get(),
+      adminDb.collection('facilities').get(),
+    ]);
+
     let games = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
 
     if (!includeAll) {
       games = games.filter((g: any) => g.status !== 'inactive');
     }
+
+    // Merge any sports already present on Ground (facilities) records so they
+    // automatically appear as selectable games in Tournament creation without duplicates.
+    const seenSlugs = new Set<string>(
+      games.map((g: any) =>
+        (g.slug || g.name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+      )
+    );
+
+    facSnap.docs.forEach((d: any) => {
+      const sportRaw = (d.data()?.sport || '').trim();
+      if (!sportRaw) return;
+      const slug = sportRaw.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      if (slug && !seenSlugs.has(slug)) {
+        seenSlugs.add(slug);
+        games.push({
+          id: `ground_${slug}`,
+          name: sportRaw,
+          slug,
+          category: 'Ground Sport',
+          status: 'active',
+          source: 'ground',
+        });
+      }
+    });
 
     games.sort((a: any, b: any) => (a.name || '').localeCompare(b.name || ''));
     return ok(games);
