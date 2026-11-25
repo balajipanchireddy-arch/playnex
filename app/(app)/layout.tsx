@@ -21,7 +21,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const roles = rolesSnap.docs.map((d: any) => d.data().roleId as string);
   const isAdmin = await hasAdminAccess(session.uid);
 
-  // Ensure Super Admin receives Admin navigation without fake extra roles.
+  // Both confirmed platform administrators get admin nav without redundant role docs.
   if (isAdmin && !roles.includes('admin')) {
     roles.push('admin');
   }
@@ -33,12 +33,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#F5F7FA] text-[#172033]">
-      <Navbar 
-        roles={roles} 
-        isAdmin={isAdmin} 
-        userEmail={session.email} 
-        signOutAction={handleSignOut} 
+    <div className="min-h-screen flex flex-col bg-[#F8FAFC] text-[#172033]">
+      <Navbar
+        roles={roles}
+        isAdmin={isAdmin}
+        userEmail={session.email}
+        signOutAction={handleSignOut}
       />
 
       <WelcomeNotificationModal />
@@ -50,10 +50,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       {/* Floating PlayNex AI Assistant */}
       <PlayNexAI />
 
-      <footer className="border-t border-[#E2E8F0] bg-white py-6 text-center text-xs text-[#64748B]">
+      <footer className="border-t border-[#E5E7EB] bg-white py-6 text-center text-xs text-[#667085]">
         <div className="mx-auto max-w-7xl px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
-          <p>© {new Date().getFullYear()} PlayNex. The Connected Sports & Gaming Ecosystem.</p>
-          <p className="text-[#64748B]">Play harder. Manage smarter. Grow faster.</p>
+          <p>© {new Date().getFullYear()} PlayNex. The Connected Sports &amp; Gaming Ecosystem.</p>
+          <p className="text-[#667085]">Play harder. Manage smarter. Grow faster.</p>
         </div>
       </footer>
     </div>

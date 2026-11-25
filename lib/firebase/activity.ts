@@ -4,7 +4,7 @@ export interface ActivityLogInput {
   userId: string;
   userName?: string;
   action: string;
-  entityType: 'tournament' | 'registration' | 'verification' | 'user' | 'order' | 'booking' | 'announcement' | 'game';
+  entityType: 'tournament' | 'registration' | 'verification' | 'user' | 'order' | 'booking' | 'announcement' | 'game' | 'staff' | 'match';
   entityId?: string;
   details: string;
 }

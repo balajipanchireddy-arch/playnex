@@ -61,6 +61,9 @@ export default function PlayerDashboard() {
   const [products, setProducts] = useState<any[]>([]);
   const [events, setEvents] = useState<any[]>([]);
   const [games, setGames] = useState<any[]>([]);
+  const [matches, setMatches] = useState<any[]>([]);
+  const [myBookings, setMyBookings] = useState<any[]>([]);
+  const [verification, setVerification] = useState<any>(null);
   const [nearbyData, setNearbyData] = useState<{ callerCity: string; totalNearby: number; sportCounts: Record<string, number>; players: any[] } | null>(null);
 
   const [loading, setLoading] = useState(true);
@@ -77,6 +80,26 @@ export default function PlayerDashboard() {
   const [profileModal, setProfileModal] = useState<{ name: string; skill: string; location: string; sportsPreferences?: string[] } | null>(null);
   const [tournamentDetailModal, setTournamentDetailModal] = useState<any | null>(null);
   const [preferencesModal, setPreferencesModal] = useState<boolean>(false);
+  const [showCreateMatchModal, setShowCreateMatchModal] = useState<boolean>(false);
+  const [matchForm, setMatchForm] = useState({
+    sport: 'Basketball',
+    customSport: '',
+    location: '',
+    date: new Date(Date.now() + 86400000).toISOString().split('T')[0],
+    time: '18:00',
+    requiredPlayers: 6,
+    skillLevel: 'any' as 'beginner' | 'intermediate' | 'advanced' | 'any',
+    notes: '',
+  });
+  const [showVerificationModal, setShowVerificationModal] = useState<boolean>(false);
+  const [verifyForm, setVerifyForm] = useState({
+    fullName: '',
+    phone: '',
+    idType: 'Government ID',
+    idNumber: '',
+    address: '',
+    notes: '',
+  });
   const [notifPrefs, setNotifPrefs] = useState({
     tournaments: true,
     matches: true,
@@ -90,13 +113,16 @@ export default function PlayerDashboard() {
   async function loadData() {
     setLoading(true);
     try {
-      const [profData, facData, prodData, evtData, nearbyRes, gamesRes] = await Promise.all([
+      const [profData, facData, prodData, evtData, nearbyRes, gamesRes, matchesRes, bookingsRes, verRes] = await Promise.all([
         fetch('/api/player/profile').then(r => r.json()),
         fetch('/api/facilities').then(r => r.json()),
         fetch('/api/products').then(r => r.json()),
         fetch('/api/tournaments').then(r => r.json()),
         fetch('/api/players/nearby').then(r => r.json()),
         fetch('/api/games').then(r => r.json()),
+        fetch('/api/matches').then(r => r.json()).catch(() => ({ ok: false })),
+        fetch('/api/bookings').then(r => r.json()).catch(() => ({ ok: false })),
+        fetch('/api/player/verification').then(r => r.json()).catch(() => ({ ok: false })),
       ]);
 
       if (profData.ok) {
@@ -110,6 +136,9 @@ export default function PlayerDashboard() {
       if (evtData.ok) setEvents(evtData.data || []);
       if (nearbyRes.ok) setNearbyData(nearbyRes.data);
       if (gamesRes.ok) setGames(gamesRes.data || []);
+      if (matchesRes.ok) setMatches(matchesRes.data || []);
+      if (bookingsRes.ok) setMyBookings(bookingsRes.data || []);
+      if (verRes.ok) setVerification(verRes.data);
     } catch (e) {
       console.error(e);
     } finally {
@@ -243,6 +272,101 @@ export default function PlayerDashboard() {
       }
     } catch {
       notify('err', 'Network error while booking.');
+    } finally {
+      setActionBusy(null);
+    }
+  }
+
+  async function handleCancelBooking(bookingId: string) {
+    setActionBusy(`cancel-booking-${bookingId}`);
+    try {
+      const res = await fetch('/api/bookings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bookingId }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        notify('ok', 'Booking cancelled and court slot released.');
+        loadData();
+      } else {
+        notify('err', data.error?.message || 'Failed to cancel booking.');
+      }
+    } catch {
+      notify('err', 'Network error while cancelling booking.');
+    } finally {
+      setActionBusy(null);
+    }
+  }
+
+  async function handleCreateMatch(e: React.FormEvent) {
+    e.preventDefault();
+    setActionBusy('create-match');
+    try {
+      const res = await fetch('/api/matches', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...matchForm,
+          requiredPlayers: Number(matchForm.requiredPlayers),
+        }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        notify('ok', 'Match published! Other players can now discover and join.');
+        setShowCreateMatchModal(false);
+        loadData();
+      } else {
+        notify('err', data.error?.message || 'Failed to create match.');
+      }
+    } catch {
+      notify('err', 'Network error creating match.');
+    } finally {
+      setActionBusy(null);
+    }
+  }
+
+  async function handleMatchAction(matchId: string, action: string, targetUserId?: string) {
+    setActionBusy(`match-${matchId}-${action}`);
+    try {
+      const res = await fetch(`/api/matches/${matchId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, targetUserId }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        notify('ok', `Match updated (${action.replace('_', ' ')}).`);
+        loadData();
+      } else {
+        notify('err', data.error?.message || 'Match action failed.');
+      }
+    } catch {
+      notify('err', 'Network error updating match.');
+    } finally {
+      setActionBusy(null);
+    }
+  }
+
+  async function handleSubmitVerification(e: React.FormEvent) {
+    e.preventDefault();
+    setActionBusy('submit-verification');
+    try {
+      const res = await fetch('/api/player/verification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(verifyForm),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        notify('ok', 'Player verification submitted for Admin review.');
+        setShowVerificationModal(false);
+        loadData();
+      } else {
+        notify('err', data.error?.message || 'Failed to submit verification.');
+      }
+    } catch {
+      notify('err', 'Network error submitting verification.');
     } finally {
       setActionBusy(null);
     }
@@ -1234,6 +1358,396 @@ export default function PlayerDashboard() {
             <button onClick={() => setRatingModal(null)} className="btn btn-secondary btn-sm text-xs w-full">
               Cancel
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── PLAYER VERIFICATION STATUS & SUBMISSION ──────────────────────── */}
+      <section className="card p-6 border-[#E5E7EB] bg-white space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-[#E8F5EE] text-[#16A36A] flex items-center justify-center shrink-0">
+              <ShieldCheck className="h-5 w-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-base font-extrabold text-[#172033]">Player Verification</h2>
+                <span
+                  className={`badge text-[10px] uppercase font-bold ${
+                    verification?.status === 'approved'
+                      ? 'badge-ok'
+                      : verification?.status === 'rejected' || verification?.status === 'resubmission_required'
+                      ? 'badge-bad'
+                      : verification?.status === 'pending' || verification?.status === 'under_review'
+                      ? 'badge-warn'
+                      : 'badge-neutral'
+                  }`}
+                >
+                  {(verification?.status || 'not_submitted').replace(/_/g, ' ')}
+                </span>
+              </div>
+              <p className="text-xs text-[#667085] mt-0.5">
+                {verification?.status === 'approved'
+                  ? 'Your athlete identity is verified across PlayNex tournaments and matches.'
+                  : verification?.reason
+                  ? `Review note: ${verification.reason}`
+                  : 'Verify your player identity for official tournaments and ranked matchmaking.'}
+              </p>
+            </div>
+          </div>
+
+          {(!verification?.status ||
+            verification.status === 'not_submitted' ||
+            verification.status === 'rejected' ||
+            verification.status === 'resubmission_required') && (
+            <button
+              onClick={() => {
+                setVerifyForm({
+                  fullName: profile?.name || '',
+                  phone: '',
+                  idType: 'Government ID',
+                  idNumber: '',
+                  address: profile?.location || '',
+                  notes: '',
+                });
+                setShowVerificationModal(true);
+              }}
+              className="btn btn-sm text-xs shrink-0"
+            >
+              <ShieldCheck className="h-3.5 w-3.5" />
+              {verification?.status === 'rejected' || verification?.status === 'resubmission_required'
+                ? 'Resubmit Verification'
+                : 'Submit Verification'}
+            </button>
+          )}
+        </div>
+      </section>
+
+      {/* ── MATCHMAKING HUB (DISCOVER & CREATE MATCHES) ─────────────────── */}
+      <section className="space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-[#E8F5EE] text-[#16A36A] flex items-center justify-center">
+              <Users className="h-4 w-4" />
+            </div>
+            <div>
+              <h2 className="text-lg font-extrabold text-[#172033]">
+                Open Matches &amp; Matchmaking ({matches.length})
+              </h2>
+              <p className="text-xs text-[#667085]">Create a match or join players looking for teammates</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setShowCreateMatchModal(true)}
+            className="btn btn-sm text-xs shrink-0"
+          >
+            <Gamepad2 className="h-3.5 w-3.5" /> Create Match
+          </button>
+        </div>
+
+        {matches.length === 0 ? (
+          <div className="empty-state py-10">
+            <div className="empty-state-icon"><Users className="h-6 w-6" /></div>
+            <p className="empty-state-title">No open matches right now</p>
+            <p className="empty-state-desc">Create a match and invite nearby players to join your game.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {matches.map((m) => (
+              <div key={m.id} className="card p-5 flex flex-col justify-between border-[#E5E7EB]">
+                <div>
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <span className="badge badge-brand text-[10px]">{m.sport}</span>
+                    <span
+                      className={`badge text-[10px] uppercase font-bold ${
+                        m.status === 'open'
+                          ? 'badge-ok'
+                          : m.status === 'full' || m.status === 'ready'
+                          ? 'badge-warn'
+                          : 'badge-bad'
+                      }`}
+                    >
+                      {m.status}
+                    </span>
+                  </div>
+                  <h3 className="font-bold text-base text-[#172033]">{m.location}</h3>
+                  <div className="mt-2 space-y-1 text-xs text-[#667085]">
+                    <p className="flex items-center gap-1.5">
+                      <Calendar className="h-3.5 w-3.5" /> {m.date} at {m.time}
+                    </p>
+                    <p className="flex items-center gap-1.5">
+                      <Users className="h-3.5 w-3.5" /> {m.participantCount || m.participants?.length || 1} / {m.requiredPlayers} players · Skill: {m.skillLevel || 'any'}
+                    </p>
+                    <p className="text-[11px]">Host: <span className="font-semibold text-[#172033]">{m.creatorName || 'Player'}</span></p>
+                  </div>
+                </div>
+
+                <div className="mt-4 pt-3 border-t border-[#E5E7EB] flex items-center gap-2">
+                  <button
+                    onClick={() => handleMatchAction(m.id, 'join_request')}
+                    disabled={actionBusy === `match-${m.id}-join_request` || m.status === 'cancelled' || m.status === 'expired'}
+                    className="btn btn-sm flex-1 text-xs"
+                  >
+                    {m.status === 'full' ? 'Join Waitlist' : 'Request to Join'}
+                  </button>
+                  <button
+                    onClick={() => handleMatchAction(m.id, 'leave')}
+                    disabled={actionBusy === `match-${m.id}-leave`}
+                    className="btn-secondary btn-sm text-xs"
+                  >
+                    Leave
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* ── MY COURT BOOKINGS ───────────────────────────────────────────── */}
+      <section className="space-y-4">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-lg bg-[#E8EAF0] text-[#101828] flex items-center justify-center">
+            <Calendar className="h-4 w-4" />
+          </div>
+          <div>
+            <h2 className="text-lg font-extrabold text-[#172033]">My Court Bookings ({myBookings.length})</h2>
+            <p className="text-xs text-[#667085]">Track and manage your reserved court slots</p>
+          </div>
+        </div>
+
+        {myBookings.length === 0 ? (
+          <div className="card p-6 text-center text-xs text-[#667085]">
+            You have no court bookings yet. Select a ground above to book a slot.
+          </div>
+        ) : (
+          <div className="card overflow-x-auto p-0">
+            <table className="data-table">
+              <thead className="bg-slate-50/80">
+                <tr>
+                  <th>Venue</th>
+                  <th>Sport</th>
+                  <th>Slot</th>
+                  <th>Price</th>
+                  <th>Status</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {myBookings.map((b) => (
+                  <tr key={b.id}>
+                    <td className="font-semibold">{b.facilityName}</td>
+                    <td><span className="badge badge-brand text-[10px]">{b.sport || 'Sport'}</span></td>
+                    <td className="text-xs">{formatSlot(String(b.slot))}</td>
+                    <td className="font-bold">₹{b.price}</td>
+                    <td>
+                      <span className={`badge text-[10px] uppercase ${b.status === 'confirmed' ? 'badge-ok' : 'badge-bad'}`}>
+                        {b.status}
+                      </span>
+                    </td>
+                    <td>
+                      {b.status === 'confirmed' && (
+                        <button
+                          onClick={() => handleCancelBooking(b.id)}
+                          disabled={actionBusy === `cancel-booking-${b.id}`}
+                          className="btn-danger btn-sm text-xs"
+                        >
+                          Cancel
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {/* MODAL: CREATE MATCH */}
+      {showCreateMatchModal && (
+        <div className="modal-overlay">
+          <div className="modal-box max-w-md">
+            <div className="modal-header">
+              <h3 className="modal-title">Create Match Request</h3>
+              <button onClick={() => setShowCreateMatchModal(false)} className="text-[#667085] hover:text-[#172033]">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <form onSubmit={handleCreateMatch} className="modal-body space-y-3 text-xs">
+              <div>
+                <label className="label">Sport *</label>
+                <select
+                  value={matchForm.sport}
+                  onChange={(e) => setMatchForm({ ...matchForm, sport: e.target.value })}
+                  className="input"
+                >
+                  {['Basketball', 'Football', 'Cricket', 'Tennis', 'Badminton', 'Other / Custom Sport'].map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+                {matchForm.sport === 'Other / Custom Sport' && (
+                  <input
+                    required
+                    value={matchForm.customSport}
+                    onChange={(e) => setMatchForm({ ...matchForm, customSport: e.target.value })}
+                    className="input mt-2"
+                    placeholder="Enter custom sport name"
+                  />
+                )}
+              </div>
+              <div>
+                <label className="label">Preferred Location / Arena *</label>
+                <input
+                  required
+                  value={matchForm.location}
+                  onChange={(e) => setMatchForm({ ...matchForm, location: e.target.value })}
+                  className="input"
+                  placeholder="e.g. Beach Road Turf, Visakhapatnam"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label">Date *</label>
+                  <input
+                    type="date"
+                    required
+                    value={matchForm.date}
+                    onChange={(e) => setMatchForm({ ...matchForm, date: e.target.value })}
+                    className="input"
+                  />
+                </div>
+                <div>
+                  <label className="label">Time *</label>
+                  <input
+                    type="time"
+                    required
+                    value={matchForm.time}
+                    onChange={(e) => setMatchForm({ ...matchForm, time: e.target.value })}
+                    className="input"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label">Total Players Needed *</label>
+                  <input
+                    type="number"
+                    min={2}
+                    max={50}
+                    required
+                    value={matchForm.requiredPlayers}
+                    onChange={(e) => setMatchForm({ ...matchForm, requiredPlayers: Number(e.target.value) })}
+                    className="input"
+                  />
+                </div>
+                <div>
+                  <label className="label">Skill Level</label>
+                  <select
+                    value={matchForm.skillLevel}
+                    onChange={(e) => setMatchForm({ ...matchForm, skillLevel: e.target.value as any })}
+                    className="input"
+                  >
+                    <option value="any">Any Level</option>
+                    <option value="beginner">Beginner</option>
+                    <option value="intermediate">Intermediate</option>
+                    <option value="advanced">Advanced</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="label">Notes (Optional)</label>
+                <textarea
+                  rows={2}
+                  value={matchForm.notes}
+                  onChange={(e) => setMatchForm({ ...matchForm, notes: e.target.value })}
+                  className="input"
+                  placeholder="Bring turf shoes, split court fee..."
+                />
+              </div>
+              <div className="modal-footer px-0 pb-0">
+                <button type="button" onClick={() => setShowCreateMatchModal(false)} className="btn-secondary btn-sm">
+                  Cancel
+                </button>
+                <button type="submit" disabled={actionBusy === 'create-match'} className="btn btn-sm">
+                  {actionBusy === 'create-match' ? 'Publishing...' : 'Publish Match'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: PLAYER VERIFICATION */}
+      {showVerificationModal && (
+        <div className="modal-overlay">
+          <div className="modal-box max-w-md">
+            <div className="modal-header">
+              <h3 className="modal-title">Submit Player Verification</h3>
+              <button onClick={() => setShowVerificationModal(false)} className="text-[#667085] hover:text-[#172033]">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <form onSubmit={handleSubmitVerification} className="modal-body space-y-3 text-xs">
+              <div>
+                <label className="label">Full Legal Name *</label>
+                <input
+                  required
+                  value={verifyForm.fullName}
+                  onChange={(e) => setVerifyForm({ ...verifyForm, fullName: e.target.value })}
+                  className="input"
+                />
+              </div>
+              <div>
+                <label className="label">Mobile Number *</label>
+                <input
+                  required
+                  value={verifyForm.phone}
+                  onChange={(e) => setVerifyForm({ ...verifyForm, phone: e.target.value })}
+                  className="input"
+                  placeholder="+91 98765 43210"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label">ID Type</label>
+                  <select
+                    value={verifyForm.idType}
+                    onChange={(e) => setVerifyForm({ ...verifyForm, idType: e.target.value })}
+                    className="input"
+                  >
+                    <option>Government ID</option>
+                    <option>Student ID</option>
+                    <option>Sports Federation ID</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="label">ID Last 4 / Ref</label>
+                  <input
+                    value={verifyForm.idNumber}
+                    onChange={(e) => setVerifyForm({ ...verifyForm, idNumber: e.target.value })}
+                    className="input"
+                    placeholder="Optional reference"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="label">City / Address</label>
+                <input
+                  value={verifyForm.address}
+                  onChange={(e) => setVerifyForm({ ...verifyForm, address: e.target.value })}
+                  className="input"
+                />
+              </div>
+              <div className="modal-footer px-0 pb-0">
+                <button type="button" onClick={() => setShowVerificationModal(false)} className="btn-secondary btn-sm">
+                  Cancel
+                </button>
+                <button type="submit" disabled={actionBusy === 'submit-verification'} className="btn btn-sm">
+                  {actionBusy === 'submit-verification' ? 'Submitting...' : 'Submit for Review'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

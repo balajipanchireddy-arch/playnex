@@ -2,7 +2,7 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper functions
+    // ── Helper functions ─────────────────────────────────────────────────
     function isAuthenticated() {
       return request.auth != null;
     }
@@ -29,106 +29,144 @@ service cloud.firestore {
       return getUserRole('store') || isAdmin();
     }
 
-    // 1. Users collection
+    function isStaff() {
+      return getUserRole('staff') || isAcademy() || isAdmin();
+    }
+
+    // ── 1. Users ─────────────────────────────────────────────────────────
     match /users/{userId} {
       allow read: if isAuthenticated();
       allow write: if isOwner(userId) || isAdmin();
     }
 
-    // 2. User Roles (Users cannot elevate their own role to Admin)
+    // ── 2. User Roles (no self-promotion to admin) ───────────────────────
     match /userRoles/{roleDocId} {
       allow read: if isAuthenticated();
       allow write: if isAdmin();
     }
 
-    // 3. Player Profiles
+    // ── 3. Player Profiles ───────────────────────────────────────────────
     match /playerProfiles/{userId} {
       allow read: if isAuthenticated();
       allow write: if isOwner(userId) || isAdmin();
     }
 
-    // 4. Academies collection
+    // ── 4. Academies ─────────────────────────────────────────────────────
     match /academies/{academyId} {
       allow read: if isAuthenticated();
-      allow write: if (isAuthenticated() && resource.data.ownerUserId == request.auth.uid) || isAdmin();
       allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && (resource.data.ownerUserId == request.auth.uid || isAdmin());
+      allow delete: if isAdmin();
     }
 
-    // 5. Stores collection
+    // ── 5. Stores ────────────────────────────────────────────────────────
     match /stores/{storeId} {
       allow read: if isAuthenticated();
-      allow write: if (isAuthenticated() && resource.data.ownerUserId == request.auth.uid) || isAdmin();
       allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && (resource.data.ownerUserId == request.auth.uid || isAdmin());
+      allow delete: if isAdmin();
     }
 
-    // 6. Facilities / Grounds collection
+    // ── 6. Staff Profiles ────────────────────────────────────────────────
+    match /staffProfiles/{staffId} {
+      allow read: if isStaff();
+      allow create: if isAcademy();
+      allow update, delete: if isAcademy() || isAdmin();
+    }
+
+    // ── 7. Facilities / Grounds ──────────────────────────────────────────
     match /facilities/{facilityId} {
       allow read: if isAuthenticated();
       allow create: if isAcademy();
       allow update, delete: if isAcademy() || isAdmin();
     }
 
-    // 7. Events / Tournaments collection
-    // Published tournaments can be read by all authenticated players in real-time
+    // ── 8. Events / Tournaments ──────────────────────────────────────────
     match /events/{eventId} {
       allow read: if isAuthenticated();
       allow create: if isAcademy() || isAdmin();
       allow update, delete: if isAdmin() || (isAcademy() && resource.data.academyId == request.auth.uid);
     }
 
-    // 8. Tournament Registrations
+    // ── 9. Tournament Registrations ──────────────────────────────────────
     match /registrations/{registrationId} {
       allow read: if isAuthenticated() && (
-        resource.data.userId == request.auth.uid || 
-        isAdmin() || 
+        resource.data.userId == request.auth.uid ||
+        isAdmin() ||
         isAcademy()
       );
       allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
       allow update, delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
     }
 
-    // 9. Bookings collection
+    // ── 10. Bookings ─────────────────────────────────────────────────────
     match /bookings/{bookingId} {
       allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAcademy() || isAdmin());
       allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      allow update, delete: if isAdmin();
+      allow update, delete: if isAdmin() || isAcademy();
     }
 
-    // 10. Products collection
+    // ── 11. Games / Matches ──────────────────────────────────────────────
+    match /games/{gameId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && (resource.data.creatorId == request.auth.uid || isAdmin());
+      allow delete: if isAuthenticated() && (resource.data.creatorId == request.auth.uid || isAdmin());
+    }
+
+    // ── 12. Products ─────────────────────────────────────────────────────
     match /products/{productId} {
       allow read: if isAuthenticated();
       allow create, update, delete: if isStore() || isAdmin();
     }
 
-    // 11. Orders collection
+    // ── 13. Orders ───────────────────────────────────────────────────────
     match /orders/{orderId} {
       allow read: if isAuthenticated() && (resource.data.playerId == request.auth.uid || isStore() || isAdmin());
       allow create: if isAuthenticated() && request.resource.data.playerId == request.auth.uid;
       allow update: if isStore() || isAdmin();
+      allow delete: if isAdmin();
     }
 
-    // 12. Ratings collection
+    // ── 14. Ratings ──────────────────────────────────────────────────────
     match /ratings/{ratingId} {
       allow read: if isAuthenticated();
       allow create, update: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
       allow delete: if isAdmin();
     }
 
-    // 13. Notifications collection
+    // ── 15. Notifications ────────────────────────────────────────────────
     match /notifications/{notificationId} {
-      allow read: if isAuthenticated();
+      // Users can read their own notifications; admins can read all
+      allow read: if isAuthenticated() && (
+        resource.data.recipientId == request.auth.uid ||
+        isAdmin()
+      );
+      // Only server-side (admin SDK) or admin users write notifications
       allow write: if isAdmin();
     }
 
-    // 14. Notification Reads tracking
+    // ── 16. Notification Reads ───────────────────────────────────────────
     match /notificationReads/{readDocId} {
       allow read, write: if isAuthenticated() && readDocId.matches('.*_' + request.auth.uid);
     }
 
-    // 15. Activity Logs collection
+    // ── 17. Activity Logs ────────────────────────────────────────────────
     match /activityLogs/{logId} {
       allow read: if isAdmin();
-      allow write: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if isAdmin();
+    }
+
+    // ── 18. Player Verifications ─────────────────────────────────────────
+    match /playerVerifications/{verificationId} {
+      allow read: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid ||
+        isAdmin()
+      );
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
     }
   }
 }

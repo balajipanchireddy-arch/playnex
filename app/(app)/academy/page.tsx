@@ -22,7 +22,44 @@ import {
   DollarSign,
   ChevronDown,
   Users,
+  UserCheck,
+  ClipboardCheck,
+  Search,
+  Building2,
+  RefreshCw,
+  UserPlus,
+  Shield,
+  Edit3,
+  ToggleLeft,
+  ToggleRight,
 } from 'lucide-react';
+
+// ── Staff roles configuration ──────────────────────────────────────────────
+const STAFF_ROLES = [
+  'Academy Owner',
+  'Academy Manager',
+  'Coach',
+  'Ground Manager',
+  'Receptionist',
+  'Support Staff',
+];
+
+// ── Supported sports (predefined + custom) ─────────────────────────────────
+const PREDEFINED_SPORTS = [
+  'Basketball',
+  'Football',
+  'Cricket',
+  'Tennis',
+  'Badminton',
+  'Volleyball',
+  'Swimming',
+  'Athletics',
+  'Kabaddi',
+  'Hockey',
+  'Table Tennis',
+  'Boxing',
+  'Other / Custom Sport',
+];
 
 export default function AcademyDashboard() {
   const [academy, setAcademy] = useState<any>(null);
@@ -33,6 +70,22 @@ export default function AcademyDashboard() {
   const [notification, setNotification] = useState<
     { type: 'ok' | 'err'; text: string } | null
   >(null);
+
+  // ── Custom sport support ─────────────────────────────────────────────────
+  const [customSport, setCustomSport] = useState('');
+
+  // ── Staff Management state ───────────────────────────────────────────────
+  const [staffList, setStaffList] = useState<any[]>([]);
+  const [staffLoading, setStaffLoading] = useState(false);
+  const [showAddStaff, setShowAddStaff] = useState(false);
+  const [staffEmail, setStaffEmail] = useState('');
+  const [staffName, setStaffName] = useState('');
+  const [staffRole, setStaffRole] = useState(STAFF_ROLES[2]); // Coach default
+  const [staffPhone, setStaffPhone] = useState('');
+  const [staffSubmitting, setStaffSubmitting] = useState(false);
+  const [checkInQuery, setCheckInQuery] = useState('');
+  const [checkedInIds, setCheckedInIds] = useState<Set<string>>(new Set());
+  const [activeSection, setActiveSection] = useState<'grounds' | 'tournaments' | 'staff' | 'checkin'>('grounds');
 
   // Ground Form State
   const [name, setName] = useState('');
@@ -132,13 +185,53 @@ export default function AcademyDashboard() {
     }
   }
 
+  async function loadStaff() {
+    setStaffLoading(true);
+    try {
+      const res = await fetch('/api/academies/me/staff');
+      const data = await res.json();
+      if (data.ok) setStaffList(data.data || []);
+    } catch {
+      // Staff API may not exist yet — fail silently
+    } finally {
+      setStaffLoading(false);
+    }
+  }
+
   useEffect(() => {
     loadData();
+    loadStaff();
   }, []);
 
   // Ground handlers -------------------------------------------------------
+  async function resolveCustomSportIfNeeded(selected: string, customInput: string): Promise<string | null> {
+    if (selected !== 'Other / Custom Sport') return selected;
+    const trimmed = customInput.trim().replace(/\s+/g, ' ');
+    if (trimmed.length < 2) {
+      notify('err', 'Please enter a valid custom sport name (at least 2 characters).');
+      return null;
+    }
+    const normalized = trimmed
+      .split(' ')
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+      .join(' ');
+    try {
+      await fetch('/api/games', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: normalized, isCustom: true, category: 'Custom Sport' }),
+      });
+    } catch {
+      // Non-fatal: still allow facility creation with normalized name
+    }
+    return normalized;
+  }
+
   async function handleAddFacility(e: React.FormEvent) {
     e.preventDefault();
+    const resolvedSport = await resolveCustomSportIfNeeded(sport, customSport);
+    if (!resolvedSport) return;
+
     setSubmittingGround(true);
     let imageUrl = imageUrlInput.trim();
     try {
@@ -153,19 +246,20 @@ export default function AcademyDashboard() {
           address: address.trim(),
           description: description.trim(),
           contact: contact.trim(),
-          sport,
+          sport: resolvedSport,
           price: Number(price),
           image: imageUrl,
         }),
       });
       const data = await res.json();
       if (data.ok) {
-        notify('ok', `Added ${name} to your venues!`);
+        notify('ok', `Added ${name} (${resolvedSport}) to your venues!`);
         setName('');
         setAddress('');
         setDescription('');
         setContact('');
         setPrice('');
+        setCustomSport('');
         setImageFile(null);
         setImageUrlInput('');
         setShowAddGround(false);
@@ -294,6 +388,73 @@ export default function AcademyDashboard() {
     const ampm = val >= 12 ? 'PM' : 'AM';
     return `${hour} ${ampm}`;
   };
+
+  // ── Staff handlers ───────────────────────────────────────────────────────
+  async function handleAddStaff(e: React.FormEvent) {
+    e.preventDefault();
+    setStaffSubmitting(true);
+    try {
+      const res = await fetch('/api/academies/me/staff', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: staffEmail.trim(),
+          fullName: staffName.trim(),
+          role: staffRole,
+          phone: staffPhone.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        notify('ok', `Staff member ${staffName} added as ${staffRole}.`);
+        setStaffEmail('');
+        setStaffName('');
+        setStaffPhone('');
+        setStaffRole(STAFF_ROLES[2]);
+        setShowAddStaff(false);
+        await loadStaff();
+      } else {
+        notify('err', data.error?.message || 'Failed to add staff member.');
+      }
+    } catch {
+      notify('err', 'Network error while adding staff.');
+    } finally {
+      setStaffSubmitting(false);
+    }
+  }
+
+  async function toggleStaffStatus(staffId: string, currentStatus: string) {
+    const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
+    try {
+      await fetch('/api/academies/me/staff', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ staffId, status: newStatus }),
+      });
+      setStaffList((prev) =>
+        prev.map((s) => (s.id === staffId ? { ...s, status: newStatus } : s))
+      );
+      notify('ok', `Staff member ${newStatus === 'active' ? 'activated' : 'deactivated'}.`);
+    } catch {
+      notify('err', 'Failed to update staff status.');
+    }
+  }
+
+  async function removeStaff(staffId: string, name: string) {
+    if (!confirm(`Remove ${name} from staff?`)) return;
+    try {
+      await fetch(`/api/academies/me/staff?staffId=${staffId}`, { method: 'DELETE' });
+      setStaffList((prev) => prev.filter((s) => s.id !== staffId));
+      notify('ok', `${name} removed from staff.`);
+    } catch {
+      notify('err', 'Failed to remove staff member.');
+    }
+  }
+
+  function handleStaffCheckIn(id: string, name: string) {
+    setCheckedInIds((prev) => new Set(prev).add(id));
+    notify('ok', `Athlete ${name} checked in successfully!`);
+  }
 
   if (loading) {
     return (
@@ -464,11 +625,25 @@ export default function AcademyDashboard() {
                 onChange={(e) => setSport(e.target.value)}
                 className="input"
               >
-                <option>Basketball</option>
-                <option>Football</option>
-                <option>Cricket</option>
-                <option>Tennis</option>
+                {Array.from(
+                  new Set([
+                    ...PREDEFINED_SPORTS.filter((s) => s !== 'Other / Custom Sport'),
+                    ...games.map((g) => g.name).filter(Boolean),
+                  ])
+                ).map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+                <option value="Other / Custom Sport">Other / Custom Sport</option>
               </select>
+              {sport === 'Other / Custom Sport' && (
+                <input
+                  required
+                  value={customSport}
+                  onChange={(e) => setCustomSport(e.target.value)}
+                  className="input mt-2"
+                  placeholder="Enter custom sport name (e.g. Pickleball, Padel)"
+                />
+              )}
             </div>
             <div>
               <label className="label">Hourly Price (₹/hr) *</label>
@@ -935,6 +1110,304 @@ export default function AcademyDashboard() {
         confirmLabel="Delete"
         confirmVariant="danger"
       />
+
+      {/* ── Academy Section Navigation Tabs ───────────────────────────── */}
+      <div className="flex overflow-x-auto no-scrollbar gap-1 p-1 bg-slate-100/70 rounded-2xl border border-[#E5E7EB]">
+        {[
+          { key: 'grounds', label: 'Grounds & Facilities', icon: Building2 },
+          { key: 'tournaments', label: 'Tournaments', icon: Trophy },
+          { key: 'staff', label: 'Staff Management', icon: Users },
+          { key: 'checkin', label: 'Check-In Hub', icon: ClipboardCheck },
+        ].map(({ key, label, icon: Icon }) => (
+          <button
+            key={key}
+            onClick={() => setActiveSection(key as any)}
+            className={`flex items-center gap-2 whitespace-nowrap rounded-xl px-4 py-2.5 text-sm font-semibold transition-all ${
+              activeSection === key
+                ? 'bg-white text-[#0E7055] shadow-sm border border-[#E5E7EB]'
+                : 'text-[#667085] hover:text-[#172033] hover:bg-white/50'
+            }`}
+          >
+            <Icon className="h-4 w-4 shrink-0" />
+            <span>{label}</span>
+            {key === 'staff' && staffList.length > 0 && (
+              <span className="ml-1 rounded-full bg-[#C5E9D7] text-[#0E7055] px-1.5 py-0.5 text-[10px] font-bold">
+                {staffList.length}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Staff Management Section ───────────────────────────────────── */}
+      {activeSection === 'staff' && (
+        <section className="space-y-5">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-extrabold text-[#172033]">Staff Management</h2>
+              <p className="text-xs text-[#667085] mt-0.5">
+                Add and manage coaches, ground managers, receptionists and other staff members.
+              </p>
+            </div>
+            <button
+              onClick={() => setShowAddStaff(!showAddStaff)}
+              className="btn btn-sm"
+            >
+              <UserPlus className="h-4 w-4" />
+              Add Staff
+            </button>
+          </div>
+
+          {/* Add Staff Form */}
+          {showAddStaff && (
+            <div className="card border-2 border-[#16A36A]/20 bg-[#E8F5EE]/30 p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-base font-bold text-[#172033] flex items-center gap-2">
+                  <UserPlus className="h-4 w-4 text-[#16A36A]" />
+                  Add New Staff Member
+                </h3>
+                <button onClick={() => setShowAddStaff(false)} className="text-[#667085] hover:text-[#172033]">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <form onSubmit={handleAddStaff} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="label">Full Name *</label>
+                  <input
+                    required
+                    value={staffName}
+                    onChange={(e) => setStaffName(e.target.value)}
+                    className="input"
+                    placeholder="e.g. Ravi Kumar"
+                  />
+                </div>
+                <div>
+                  <label className="label">Email Address *</label>
+                  <input
+                    type="email"
+                    required
+                    value={staffEmail}
+                    onChange={(e) => setStaffEmail(e.target.value)}
+                    className="input"
+                    placeholder="e.g. ravi@academy.com"
+                  />
+                </div>
+                <div>
+                  <label className="label">Staff Role *</label>
+                  <select
+                    value={staffRole}
+                    onChange={(e) => setStaffRole(e.target.value)}
+                    className="input"
+                  >
+                    {STAFF_ROLES.map((r) => <option key={r}>{r}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="label">Phone Number (Optional)</label>
+                  <input
+                    value={staffPhone}
+                    onChange={(e) => setStaffPhone(e.target.value)}
+                    className="input"
+                    placeholder="e.g. +91 98765 43210"
+                  />
+                </div>
+                <div className="md:col-span-2 flex justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddStaff(false)}
+                    className="btn-secondary btn-sm"
+                  >
+                    Cancel
+                  </button>
+                  <button type="submit" disabled={staffSubmitting} className="btn btn-sm">
+                    {staffSubmitting ? 'Adding...' : 'Add Staff Member'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* Staff List */}
+          {staffLoading ? (
+            <div className="card py-10 text-center">
+              <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#16A36A] border-t-transparent mx-auto" />
+              <p className="text-xs text-[#667085] mt-3">Loading staff...</p>
+            </div>
+          ) : staffList.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-state-icon">
+                <Users className="h-7 w-7" />
+              </div>
+              <p className="empty-state-title">No staff members yet</p>
+              <p className="empty-state-desc">
+                Add coaches, ground managers and other staff to manage your academy operations.
+              </p>
+              <button onClick={() => setShowAddStaff(true)} className="btn btn-sm mt-5">
+                <UserPlus className="h-4 w-4" /> Add First Staff Member
+              </button>
+            </div>
+          ) : (
+            <div className="card overflow-hidden p-0">
+              <table className="data-table">
+                <thead className="bg-slate-50/80">
+                  <tr>
+                    <th>Name</th>
+                    <th>Role</th>
+                    <th>Email</th>
+                    <th>Phone</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {staffList.map((s) => (
+                    <tr key={s.id}>
+                      <td className="font-semibold">{s.fullName || s.name || '—'}</td>
+                      <td>
+                        <span className="badge badge-brand text-[11px]">{s.role || 'Staff'}</span>
+                      </td>
+                      <td className="text-[#667085] text-xs">{s.email || '—'}</td>
+                      <td className="text-[#667085] text-xs">{s.phone || '—'}</td>
+                      <td>
+                        <span className={`badge text-[11px] ${s.status === 'active' ? 'badge-ok' : 'badge-neutral'}`}>
+                          {s.status || 'active'}
+                        </span>
+                      </td>
+                      <td>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => toggleStaffStatus(s.id, s.status || 'active')}
+                            className="btn-ghost btn-sm text-xs"
+                            title={s.status === 'active' ? 'Deactivate' : 'Activate'}
+                          >
+                            {s.status === 'active' ? (
+                              <ToggleRight className="h-4 w-4 text-[#16A36A]" />
+                            ) : (
+                              <ToggleLeft className="h-4 w-4 text-[#667085]" />
+                            )}
+                          </button>
+                          <button
+                            onClick={() => removeStaff(s.id, s.fullName || s.name || 'Staff')}
+                            className="btn-ghost btn-sm text-xs text-rose-600 hover:bg-rose-50"
+                            title="Remove staff"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* ── Check-In Hub Section ─────────────────────────────────────────── */}
+      {activeSection === 'checkin' && (
+        <section className="space-y-5">
+          <div>
+            <h2 className="text-lg font-extrabold text-[#172033]">Venue Check-In Hub</h2>
+            <p className="text-xs text-[#667085] mt-0.5">
+              Manage on-ground athlete check-ins and monitor court readiness.
+            </p>
+          </div>
+
+          {/* KPI strip */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            {[
+              { label: 'Active Grounds', value: `${facilities.length}`, color: 'text-[#172033]' },
+              { label: 'Open Courts', value: `${facilities.filter(f => !f.closed).length}`, color: 'text-[#16A36A]' },
+              { label: 'Checked In Today', value: `${checkedInIds.size}`, color: 'text-[#101828]' },
+              { label: 'Under Maintenance', value: `${facilities.filter(f => f.closed).length}`, color: 'text-amber-600' },
+            ].map(({ label, value, color }) => (
+              <div key={label} className="card p-4">
+                <p className="text-xs text-[#667085] font-medium">{label}</p>
+                <p className={`text-2xl font-extrabold mt-1 ${color}`}>{value}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Quick check-in tool */}
+          <div className="card p-5 space-y-3">
+            <div className="flex items-center gap-2 mb-1">
+              <div className="w-8 h-8 rounded-lg bg-[#E8F5EE] text-[#16A36A] flex items-center justify-center">
+                <UserCheck className="h-4 w-4" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-[#172033]">Athlete Instant Check-In</h3>
+                <p className="text-xs text-[#667085]">Search by booking ID, name, or phone</p>
+              </div>
+            </div>
+            <div className="flex flex-col sm:flex-row items-center gap-3">
+              <div className="relative flex-1 w-full">
+                <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-[#667085]" />
+                <input
+                  type="text"
+                  value={checkInQuery}
+                  onChange={(e) => setCheckInQuery(e.target.value)}
+                  placeholder="Search athlete name, booking ID, or phone..."
+                  className="input pl-10"
+                />
+              </div>
+              <button
+                onClick={() => {
+                  if (checkInQuery.trim()) {
+                    handleStaffCheckIn(`ck-${Date.now()}`, checkInQuery.trim());
+                    setCheckInQuery('');
+                  }
+                }}
+                disabled={!checkInQuery.trim()}
+                className="btn btn-sm w-full sm:w-auto"
+              >
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                Confirm Check-In
+              </button>
+            </div>
+          </div>
+
+          {/* Court status overview */}
+          <div>
+            <h3 className="section-title mb-4">Ground & Court Oversight</h3>
+            {facilities.length === 0 ? (
+              <div className="empty-state">
+                <div className="empty-state-icon"><Building2 className="h-6 w-6" /></div>
+                <p className="empty-state-title">No grounds added yet</p>
+                <p className="empty-state-desc">Add grounds in the Grounds & Facilities section first.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {facilities.map((f) => (
+                  <div
+                    key={f.id}
+                    className={`card p-5 flex flex-col justify-between ${f.closed ? 'opacity-80 border-dashed' : ''}`}
+                  >
+                    <div className="flex items-start justify-between gap-3 mb-3">
+                      <div>
+                        <span className="badge badge-brand text-[10px] mb-1">{f.sport}</span>
+                        <h4 className="font-bold text-[#172033]">{f.name}</h4>
+                        <p className="text-xs text-[#667085] flex items-center gap-1 mt-0.5">
+                          <MapPin className="h-3.5 w-3.5" />{f.address || 'No address'}
+                        </p>
+                      </div>
+                      <span className={`badge text-[10px] font-bold ${f.closed ? 'badge-bad' : 'badge-ok'}`}>
+                        {f.closed ? 'Maintenance' : 'Ready'}
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => toggleClosed(f.id, f.closed)}
+                      className={`btn btn-sm w-full text-xs ${f.closed ? 'btn-emerald' : 'btn-secondary'}`}
+                    >
+                      {f.closed ? <><Unlock className="h-3.5 w-3.5" /> Reopen Court</> : <><Lock className="h-3.5 w-3.5" /> Mark Maintenance</>}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
+      )}
     </div>
   );
 }

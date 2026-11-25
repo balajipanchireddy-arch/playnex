@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
       try {
         await adminAuth.setCustomUserClaims(decoded.uid, { roles: ['admin'] });
       } catch (err) {
-        console.warn('Could not update Super Admin claims:', err);
+        console.warn('Could not update Admin claims:', err);
       }
 
       await setSessionCookie(parsed.data.idToken);
@@ -41,13 +41,14 @@ export async function POST(req: NextRequest) {
         user: user || {
           uid: decoded.uid,
           email: decoded.email,
-          fullName: 'Super Admin',
+          fullName: 'Administrator',
         },
         roles: ['admin'],
         isSuperAdmin: true,
       });
     }
 
+    // Normal user path
     const userDoc = await adminDb.collection('users').doc(decoded.uid).get();
     if (!userDoc.exists) {
       return fail('not_found', 'No account found. Please register first.', 404);
@@ -56,10 +57,11 @@ export async function POST(req: NextRequest) {
     const user = userDoc.data()!;
 
     if (user.accountStatus === 'suspended') {
-      return fail('suspended', 'Account suspended', 403);
+      return fail('suspended', 'Account suspended. Contact support.', 403);
     }
 
-    const rolesSnap = await adminDb.collection('userRoles')
+    const rolesSnap = await adminDb
+      .collection('userRoles')
       .where('userId', '==', decoded.uid)
       .where('status', '==', 'active')
       .get();
@@ -67,7 +69,7 @@ export async function POST(req: NextRequest) {
     const roles = rolesSnap.docs.map((d: any) => d.data().roleId);
 
     if (!roles.length) {
-      return fail('no_roles', 'No roles assigned to this account', 403);
+      return fail('no_roles', 'No roles assigned to this account. Contact an administrator.', 403);
     }
 
     await setSessionCookie(parsed.data.idToken);
@@ -95,7 +97,7 @@ export async function GET() {
       user: user || {
         uid: decoded.uid,
         email: decoded.email,
-        fullName: 'Super Admin',
+        fullName: 'Administrator',
       },
       roles: ['admin'],
       isSuperAdmin: true,
@@ -105,7 +107,8 @@ export async function GET() {
   const userDoc = await adminDb.collection('users').doc(decoded.uid).get();
   if (!userDoc.exists) return fail('not_found', 'User missing', 404);
 
-  const rolesSnap = await adminDb.collection('userRoles')
+  const rolesSnap = await adminDb
+    .collection('userRoles')
     .where('userId', '==', decoded.uid)
     .where('status', '==', 'active')
     .get();

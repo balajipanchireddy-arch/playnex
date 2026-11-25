@@ -164,3 +164,52 @@ export async function DELETE(req: NextRequest) {
   }
 }
 
+export async function PATCH(req: NextRequest) {
+  const session = await verifySession();
+  if (!session) return fail('unauthorized', 'Login required', 401);
+  if (!(await isAdmin(session.uid))) return fail('forbidden', 'Admin access required', 403);
+
+  try {
+    const { userId, action } = await req.json();
+    if (!userId || action !== 'reactivate') {
+      return fail('invalid', 'userId and action="reactivate" are required', 400);
+    }
+
+    const userRef = adminDb.collection('users').doc(userId);
+    const userSnap = await userRef.get();
+    if (!userSnap.exists) return fail('not_found', 'User record not found', 404);
+
+    const now = Date.now();
+    await userRef.update({
+      accountStatus: 'active',
+      reactivatedAt: now,
+      reactivatedBy: session.uid,
+      updatedAt: now,
+    });
+
+    const rolesSnap = await adminDb.collection('userRoles').where('userId', '==', userId).get();
+    for (let i = 0; i < rolesSnap.docs.length; i += 400) {
+      const batch = adminDb.batch();
+      rolesSnap.docs.slice(i, i + 400).forEach((d: any) => {
+        if (d.data().status === 'suspended') {
+          batch.update(d.ref, { status: 'active', updatedAt: now });
+        }
+      });
+      await batch.commit();
+    }
+
+    await logActivity({
+      userId: session.uid,
+      userName: 'Administrator',
+      action: 'user_reactivated',
+      entityType: 'user',
+      entityId: userId,
+      details: `Reactivated user account "${userSnap.data()?.fullName || userSnap.data()?.email || userId}"`,
+    });
+
+    return ok({ success: true, userId, status: 'active' });
+  } catch (e: any) {
+    return fail('server_error', e.message || 'Failed to reactivate user', 500);
+  }
+}
+
