@@ -2,6 +2,8 @@ import { NextRequest } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { verifySession } from '@/lib/auth/session';
 import { ok, fail } from '@/lib/api/response';
+import { findUserAcademyDoc } from '@/lib/academies/resolve';
+import { findUserStoreDoc } from '@/lib/stores/resolve';
 
 export async function POST(_req: NextRequest) {
   const session = await verifySession();
@@ -24,13 +26,15 @@ export async function POST(_req: NextRequest) {
       return fail('forbidden', 'Only Academy or Store partners can resubmit verification.', 403);
     }
 
-    const collection = partnerType === 'academy' ? 'academies' : 'stores';
-    const partnerRef = adminDb.collection(collection).doc(session.uid);
-    const partnerSnap = await partnerRef.get();
+    const partnerSnap =
+      partnerType === 'academy'
+        ? await findUserAcademyDoc(session.uid)
+        : await findUserStoreDoc(session.uid);
 
-    if (!partnerSnap.exists) {
+    if (!partnerSnap || !partnerSnap.exists) {
       return fail('not_found', 'Partner profile not found.', 404);
     }
+    const partnerRef = partnerSnap.ref;
 
     if (partnerSnap.data()?.verificationStatus !== 'rejected') {
       return fail('invalid_status', 'Only rejected applications can be resubmitted.', 400);
@@ -48,7 +52,7 @@ export async function POST(_req: NextRequest) {
     const statusField = partnerType === 'academy' ? 'academyVerification' : 'storeVerification';
 
     const relatedSnap = await adminDb.collection(relatedCollection)
-      .where(ownerField, '==', session.uid)
+      .where(ownerField, '==', partnerSnap.id)
       .get();
 
     if (!relatedSnap.empty) {

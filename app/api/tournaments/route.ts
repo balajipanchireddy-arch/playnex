@@ -2,9 +2,13 @@ import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { adminDb } from '@/lib/firebase/admin';
 import { verifySession } from '@/lib/auth/session';
+import { isAdmin as checkAdminAccess } from '@/lib/auth/admin';
 import { ok, fail } from '@/lib/api/response';
 import { logActivity } from '@/lib/firebase/activity';
 import { dispatchNotification } from '@/lib/notifications/dispatch';
+import { findUserAcademyDoc, getUserOwnedAcademyIds } from '@/lib/academies/resolve';
+
+const PUBLIC_TOURNAMENT_STATUSES = new Set(['Registration Open', 'Upcoming', 'Ongoing']);
 
 const CreateTournamentSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters'),
@@ -40,6 +44,11 @@ async function getUserRoles(uid: string) {
 
 export async function GET(req: NextRequest) {
   try {
+    const session = await verifySession();
+    const [callerIsAdmin, ownedAcademyIds] = session
+      ? await Promise.all([checkAdminAccess(session.uid), getUserOwnedAcademyIds(session.uid)])
+      : [false, new Set<string>()];
+
     const { searchParams } = new URL(req.url);
     const sport = searchParams.get('sport');
     const status = searchParams.get('status');
@@ -57,11 +66,61 @@ export async function GET(req: NextRequest) {
       query = query.where('academyId', '==', academyId);
     }
 
-    const snap = await query.get();
-    const data = snap.docs.map((d: any) => ({
-      id: d.id,
-      ...d.data(),
-    }));
+    const [snap, academiesSnap] = await Promise.all([
+      query.get(),
+      adminDb.collection('academies').where('verificationStatus', '==', 'approved').get(),
+    ]);
+    const approvedAcademyIds = new Set<string>(academiesSnap.docs.map((d: any) => d.id));
+
+    const data = snap.docs
+      .filter((d: any) => {
+        if (callerIsAdmin) return true;
+        const ev = d.data() || {};
+        if (session && ownedAcademyIds.has(ev.academyId)) return true;
+        if (ev.status === 'Draft') return false;
+
+        const isApprovedSource =
+          ev.organizerType === 'admin' ||
+          ev.academyVerification === 'approved' ||
+          approvedAcademyIds.has(ev.academyId);
+        if (!isApprovedSource) return false;
+
+        if (!session) {
+          return PUBLIC_TOURNAMENT_STATUSES.has(ev.status || 'Upcoming');
+        }
+        return true;
+      })
+      .map((d: any) => {
+        const ev = d.data() || {};
+        const base = {
+          id: d.id,
+          name: ev.name || 'Tournament',
+          sport: ev.sport || 'Sport',
+          category: ev.category || 'Open Championship',
+          participationType: ev.participationType || 'individual',
+          description: ev.description || '',
+          venue: ev.venue || ev.loc || '',
+          loc: ev.loc || ev.venue || '',
+          date: ev.date || '',
+          registrationDeadline: ev.registrationDeadline || '',
+          maxParticipants: ev.maxParticipants ?? 0,
+          registeredCount: ev.registeredCount ?? 0,
+          entryFee: ev.entryFee ?? ev.price ?? 0,
+          price: ev.price ?? ev.entryFee ?? 0,
+          rules: ev.rules || '',
+          posterUrl: ev.posterUrl || '',
+          status: ev.status || 'Upcoming',
+          academyName: ev.academyName || 'PlayNex',
+          createdAt: ev.createdAt || 0,
+        };
+        if (!session) return base;
+        return {
+          ...base,
+          academyId: ev.academyId || null,
+          academyVerification: ev.academyVerification || null,
+          organizerType: ev.organizerType || null,
+        };
+      });
 
     data.sort((a: any, b: any) => (b.createdAt || 0) - (a.createdAt || 0));
 
@@ -76,8 +135,10 @@ export async function POST(req: NextRequest) {
   const session = await verifySession();
   if (!session) return fail('unauthorized', 'Login required', 401);
 
-  const roles = await getUserRoles(session.uid);
-  const isAdmin = roles.includes('admin');
+  const [roles, isAdmin] = await Promise.all([
+    getUserRoles(session.uid),
+    checkAdminAccess(session.uid),
+  ]);
   const isAcademy = roles.includes('academy');
 
   if (!isAdmin && !isAcademy) {
@@ -94,15 +155,22 @@ export async function POST(req: NextRequest) {
 
     const data = parsed.data;
 
+    let resolvedAcademyId = session.uid;
     let organizerName = 'PlayNex Official';
     let organizerVerification = 'approved';
 
     if (isAcademy && !isAdmin) {
-      const academyDoc = await adminDb.collection('academies').doc(session.uid).get();
-      if (academyDoc.exists) {
-        organizerName = academyDoc.data()?.academyName || 'Sports Academy';
-        organizerVerification = academyDoc.data()?.verificationStatus || 'pending';
+      const academyDoc = await findUserAcademyDoc(session.uid);
+      if (!academyDoc || academyDoc.data()?.verificationStatus !== 'approved') {
+        return fail(
+          'forbidden',
+          'Your academy must be approved by PlayNex Admin before creating tournaments.',
+          403
+        );
       }
+      resolvedAcademyId = academyDoc.id;
+      organizerName = academyDoc.data()?.academyName || 'Sports Academy';
+      organizerVerification = academyDoc.data()?.verificationStatus || 'pending';
     } else if (isAdmin) {
       organizerName = 'PlayNex Tournament Authority';
       organizerVerification = 'approved';
@@ -110,7 +178,7 @@ export async function POST(req: NextRequest) {
 
     const tournamentDoc = {
       ...data,
-      academyId: session.uid,
+      academyId: resolvedAcademyId,
       academyName: organizerName,
       academyVerification: organizerVerification,
       organizerType: isAdmin ? 'admin' : 'academy',

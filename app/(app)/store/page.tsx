@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Toast from '@/components/ui/Toast';
+import DeleteConfirmModal from '@/components/DeleteConfirmModal';
 import {
   Store,
   Package,
@@ -11,13 +12,11 @@ import {
   Plus,
   Trash2,
   Truck,
-  Clock,
-  ShieldCheck,
   X,
-  Search,
   Check,
-  Sparkles,
-  ArrowRight
+  Calendar,
+  ShieldCheck,
+  ExternalLink,
 } from 'lucide-react';
 
 export default function StoreDashboard() {
@@ -37,22 +36,33 @@ export default function StoreDashboard() {
 
   const [products, setProducts] = useState<any[]>([]);
   const [orders, setOrders] = useState<any[]>([]);
+  const [rentals, setRentals] = useState<any[]>([]);
   const [games, setGames] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [notification, setNotification] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
-  // Product Form State
+  // Product Form State (Purchase + Rental)
   const [name, setName] = useState('');
   const [sport, setSport] = useState('Basketball');
   const [category, setCategory] = useState('Equipment');
   const [description, setDescription] = useState('');
   const [productImageUrl, setProductImageUrl] = useState('');
   const [price, setPrice] = useState('');
-  const [qty, setQty] = useState('1');
+  const [qty, setQty] = useState('5');
+  const [allowPurchase, setAllowPurchase] = useState(true);
+  const [allowRental, setAllowRental] = useState(false);
+  const [rentalPricePerDay, setRentalPricePerDay] = useState('');
+  const [securityDeposit, setSecurityDeposit] = useState('0');
+  const [rentalQty, setRentalQty] = useState('2');
+  const [requiresIdProof, setRequiresIdProof] = useState(false);
   const [targetStoreId, setTargetStoreId] = useState('');
   const [submittingProduct, setSubmittingProduct] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   const [filterSport, setFilterSport] = useState('All');
+
+  // Delete confirmation modal
+  const [productToDelete, setProductToDelete] = useState<any | null>(null);
+  const [deletingProduct, setDeletingProduct] = useState(false);
 
   function notify(type: 'ok' | 'err', text: string) {
     setNotification({ type, text });
@@ -65,7 +75,6 @@ export default function StoreDashboard() {
     try {
       const res = await fetch('/api/partners/resubmit', { method: 'POST' });
       const data = await res.json();
-
       if (data.ok) {
         notify('ok', 'Application resubmitted. Waiting for Admin review.');
         await loadData();
@@ -79,13 +88,21 @@ export default function StoreDashboard() {
 
   async function loadData(storeFilter = selectedStoreId) {
     try {
-      const storeQuery = storeFilter && storeFilter !== 'all' ? `?storeId=${encodeURIComponent(storeFilter)}` : '';
-      const [storeData, prodData, orderData, gamesData] = await Promise.all([
-        fetch('/api/stores/me').then(r => r.json()),
-        fetch(`/api/stores/me/products${storeQuery}`).then(r => r.json()),
-        fetch(`/api/stores/me/orders${storeQuery}`).then(r => r.json()),
-        fetch('/api/games').then(r => r.json())
+      const storeQuery =
+        storeFilter && storeFilter !== 'all' ? `?storeId=${encodeURIComponent(storeFilter)}` : '';
+      const rentalScopeQuery =
+        storeFilter && storeFilter !== 'all'
+          ? `?scope=store&storeId=${encodeURIComponent(storeFilter)}`
+          : '?scope=store';
+
+      const [storeData, prodData, orderData, rentalData, gamesData] = await Promise.all([
+        fetch('/api/stores/me').then((r) => r.json()),
+        fetch(`/api/stores/me/products${storeQuery}`).then((r) => r.json()),
+        fetch(`/api/stores/me/orders${storeQuery}`).then((r) => r.json()),
+        fetch(`/api/rentals${rentalScopeQuery}`).then((r) => r.json()).catch(() => ({ ok: false })),
+        fetch('/api/games').then((r) => r.json()),
       ]);
+
       if (storeData.ok && storeData.data) {
         if (storeData.data.isAdmin) {
           setIsAdminView(true);
@@ -108,6 +125,7 @@ export default function StoreDashboard() {
       }
       if (prodData.ok) setProducts(prodData.data || []);
       if (orderData.ok) setOrders(orderData.data || []);
+      if (rentalData.ok) setRentals(rentalData.data || []);
       if (gamesData.ok) setGames(gamesData.data || []);
     } catch {
       notify('err', 'Could not load store data.');
@@ -155,6 +173,10 @@ export default function StoreDashboard() {
 
   async function handleAddProduct(e: React.FormEvent) {
     e.preventDefault();
+    if (!allowPurchase && !allowRental) {
+      notify('err', 'Enable Purchase, Rental, or both.');
+      return;
+    }
     setSubmittingProduct(true);
     try {
       const res = await fetch('/api/stores/me/products', {
@@ -165,8 +187,14 @@ export default function StoreDashboard() {
           sport,
           category: category.trim(),
           description: description.trim(),
-          price: Number(price),
-          qty: Number(qty),
+          price: Number(price || 0),
+          qty: Number(qty || 0),
+          allowPurchase,
+          allowRental,
+          rentalPricePerDay: allowRental ? Number(rentalPricePerDay || 0) : 0,
+          securityDeposit: allowRental ? Number(securityDeposit || 0) : 0,
+          rentalQty: allowRental ? Number(rentalQty || qty || 0) : 0,
+          requiresIdProof: allowRental ? requiresIdProof : false,
           image: productImageUrl.trim(),
           ...(isAdminView && targetStoreId ? { storeId: targetStoreId } : {}),
         }),
@@ -176,9 +204,12 @@ export default function StoreDashboard() {
         notify('ok', `Added "${name}" to your shop catalog!`);
         setName('');
         setPrice('');
-        setQty('1');
+        setQty('5');
         setDescription('');
         setProductImageUrl('');
+        setRentalPricePerDay('');
+        setSecurityDeposit('0');
+        setRequiresIdProof(false);
         setShowAddForm(false);
         loadData();
       } else {
@@ -193,54 +224,98 @@ export default function StoreDashboard() {
 
   async function updateQty(id: string, currentQty: number, diff: number) {
     const newQty = Math.max(0, currentQty + diff);
-    setProducts(products.map(p => p.id === id ? { ...p, qty: newQty } : p));
+    setProducts((prev) => prev.map((p) => (p.id === id ? { ...p, qty: newQty } : p)));
     await fetch('/api/stores/me/products', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ productId: id, qty: newQty })
+      body: JSON.stringify({ productId: id, qty: newQty }),
     });
   }
 
   async function updatePrice(id: string, newPrice: string) {
     const p = Number(newPrice);
     if (isNaN(p) || p <= 0) return;
-    setProducts(products.map(x => x.id === id ? { ...x, price: p } : x));
+    setProducts((prev) => prev.map((x) => (x.id === id ? { ...x, price: p } : x)));
     await fetch('/api/stores/me/products', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ productId: id, price: p })
+      body: JSON.stringify({ productId: id, price: p }),
     });
     notify('ok', 'Item price updated.');
   }
 
-  async function deleteProduct(id: string) {
-    if (!confirm('Remove this product from your inventory?')) return;
-    await fetch(`/api/stores/me/products?productId=${id}`, { method: 'DELETE' });
-    notify('ok', 'Item removed.');
-    loadData();
+  async function handleConfirmDeleteProduct() {
+    if (!productToDelete) return;
+    setDeletingProduct(true);
+    try {
+      const res = await fetch(
+        `/api/stores/me/products?productId=${encodeURIComponent(productToDelete.id)}`,
+        { method: 'DELETE' }
+      );
+      const data = await res.json();
+      if (data.ok) {
+        notify(
+          'ok',
+          `Product "${productToDelete.name}" deleted. ${data.data?.ordersPreserved || 0} historical order(s) preserved.`
+        );
+        setProductToDelete(null);
+        await loadData();
+      } else {
+        notify('err', data.error?.message || 'Could not delete product.');
+      }
+    } catch {
+      notify('err', 'Network error deleting product.');
+    } finally {
+      setDeletingProduct(false);
+    }
   }
 
-  async function handleFulfill(orderId: string) {
+  async function handleOrderStatus(orderId: string, status: 'confirmed' | 'shipped' | 'delivered') {
     try {
       const res = await fetch('/api/stores/me/orders', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId })
+        body: JSON.stringify({ orderId, status }),
       });
-      if ((await res.json()).ok) {
-        notify('ok', 'Order marked as fulfilled & shipped!');
+      const json = await res.json();
+      if (json.ok) {
+        notify('ok', `Order marked as ${status}!`);
         loadData();
+      } else {
+        notify('err', json.error?.message || 'Failed to update order status.');
       }
     } catch {
       notify('err', 'Failed to update order status.');
     }
   }
 
+  async function handleRentalStatus(
+    rentalId: string,
+    status: 'active' | 'returned' | 'overdue' | 'cancelled'
+  ) {
+    try {
+      const res = await fetch('/api/rentals', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rentalId, status }),
+      });
+      const json = await res.json();
+      if (json.ok) {
+        notify('ok', `Rental updated to ${status}.`);
+        loadData();
+      } else {
+        notify('err', json.error?.message || 'Failed to update rental.');
+      }
+    } catch {
+      notify('err', 'Network error updating rental.');
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center py-20">
-        <div className="h-10 w-10 animate-spin rounded-full border-4 border-brand-500 border-t-transparent" />
-        <p className="mt-4 text-sm font-semibold text-slate-500">Loading sports store inventory...</p>
+        <div className="h-10 w-10 animate-spin rounded-full border-4 border-[#16A36A] border-t-transparent" />
+        <p className="mt-4 text-sm font-semibold text-[#667085]">Loading sports store inventory...</p>
       </div>
     );
   }
@@ -257,7 +332,7 @@ export default function StoreDashboard() {
             <div>
               <h2 className="text-xl font-extrabold text-[#172033]">Register Your Sports Store</h2>
               <p className="text-xs text-[#667085] mt-0.5">
-                Set up your PlayNex store profile to list sports equipment, manage inventory, and fulfill orders.
+                Set up your PlayNex store profile to sell or rent sports equipment and fulfill orders.
               </p>
             </div>
           </div>
@@ -300,14 +375,10 @@ export default function StoreDashboard() {
                 value={regDescription}
                 onChange={(e) => setRegDescription(e.target.value)}
                 className="input"
-                placeholder="Tell players what gear, apparel, and brands you carry..."
+                placeholder="Tell players what gear, apparel, and rentals you carry..."
               />
             </div>
-            <button
-              type="submit"
-              disabled={registeringStore}
-              className="btn w-full"
-            >
+            <button type="submit" disabled={registeringStore} className="btn w-full">
               {registeringStore ? 'Creating Store Profile...' : 'Register Store'}
             </button>
           </form>
@@ -317,19 +388,17 @@ export default function StoreDashboard() {
   }
 
   const total = products.length;
-  const inStock = products.filter(p => p.qty > 0).length;
-  const outOfStock = products.filter(p => p.qty === 0).length;
-  const lowStock = products.filter(p => p.qty > 0 && p.qty <= 2).length;
-
+  const inStock = products.filter((p) => p.qty > 0 || (p.allowRental && p.rentalQty > 0)).length;
+  const outOfStock = products.filter((p) => p.qty === 0).length;
+  const activeRentalsCount = rentals.filter((r) => ['pending', 'active', 'overdue'].includes(r.status)).length;
   const isApproved = isAdminView || store?.verificationStatus === 'approved';
 
-  const filteredProducts = products.filter(p =>
-    filterSport === 'All' || p.sport?.toLowerCase() === filterSport.toLowerCase()
+  const filteredProducts = products.filter(
+    (p) => filterSport === 'All' || p.sport?.toLowerCase() === filterSport.toLowerCase()
   );
 
   return (
     <div className="space-y-8 relative">
-      {/* Toast Notification */}
       <Toast message={notification} onClose={() => setNotification(null)} />
 
       {/* Store Hero Banner */}
@@ -344,18 +413,20 @@ export default function StoreDashboard() {
                 <span className="text-[10px] font-bold uppercase tracking-wider text-[#667085]">
                   {isAdminView ? 'Platform Store Administration' : 'Sports Merchant Hub'}
                 </span>
-                <span className={`badge text-[10px] font-bold uppercase ${
-                  isApproved
-                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                    : 'bg-amber-50 text-amber-700 border border-amber-200'
-                }`}>
+                <span
+                  className={`badge text-[10px] font-bold uppercase ${
+                    isApproved
+                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                      : 'bg-amber-50 text-amber-700 border border-amber-200'
+                  }`}
+                >
                   {isAdminView
                     ? 'Admin Full Access'
                     : isApproved
-                      ? 'Verified Partner'
-                      : store?.verificationStatus === 'rejected'
-                        ? 'Verification Rejected'
-                        : 'Verification Pending'}
+                    ? 'Verified Partner'
+                    : store?.verificationStatus === 'rejected'
+                    ? 'Verification Rejected'
+                    : 'Verification Pending'}
                 </span>
               </div>
               <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[#172033]">
@@ -363,8 +434,8 @@ export default function StoreDashboard() {
               </h1>
               <p className="text-xs text-[#667085] mt-0.5">
                 {isAdminView
-                  ? `Managing ${allStores.length} registered store(s), ${products.length} product(s), and ${orders.length} order(s) across PlayNex.`
-                  : (store?.address || 'Authorized Sports Equipment & Apparel Provider')}
+                  ? `Managing ${allStores.length} store(s), ${products.length} product(s), ${orders.length} order(s), and ${rentals.length} rental(s).`
+                  : store?.address || 'Authorized Sports Equipment Purchase & Rental Provider'}
               </p>
             </div>
           </div>
@@ -384,7 +455,7 @@ export default function StoreDashboard() {
               className="btn btn-sm btn-emerald text-xs"
             >
               <Plus className="h-4 w-4" />
-              Add Equipment Item
+              Add Gear Item
             </button>
           </div>
         </div>
@@ -431,7 +502,7 @@ export default function StoreDashboard() {
                 Registered Stores ({allStores.length})
               </h2>
               <p className="text-xs text-[#667085]">
-                Select a store to filter its products and orders, or view all stores at once.
+                Select a store to filter its products, orders, and rentals.
               </p>
             </div>
             <button
@@ -450,7 +521,7 @@ export default function StoreDashboard() {
           </div>
 
           {allStores.length === 0 ? (
-            <p className="text-xs text-[#667085] py-4">No stores registered yet. Click &quot;Create Store&quot; above to add one.</p>
+            <p className="text-xs text-[#667085] py-4">No stores registered yet.</p>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
               {allStores.map((s) => {
@@ -485,7 +556,6 @@ export default function StoreDashboard() {
                       </span>
                     </div>
                     <p className="text-xs text-[#667085] mt-1 truncate">{s.address || 'No address'}</p>
-                    {s.contact && <p className="text-[11px] text-[#667085] mt-0.5">{s.contact}</p>}
                   </button>
                 );
               })}
@@ -495,11 +565,13 @@ export default function StoreDashboard() {
       )}
 
       {!isAdminView && store && store.verificationStatus !== 'approved' && (
-        <div className={`rounded-2xl p-4 text-xs ${
-          store.verificationStatus === 'rejected'
-            ? 'border border-rose-200 bg-rose-50 text-rose-900'
-            : 'border border-amber-200 bg-amber-50 text-amber-900'
-        }`}>
+        <div
+          className={`rounded-2xl p-4 text-xs ${
+            store.verificationStatus === 'rejected'
+              ? 'border border-rose-200 bg-rose-50 text-rose-900'
+              : 'border border-amber-200 bg-amber-50 text-amber-900'
+          }`}
+        >
           <p className="font-bold">
             {store.verificationStatus === 'rejected'
               ? 'Store Verification Rejected'
@@ -511,11 +583,7 @@ export default function StoreDashboard() {
               : 'Your store is awaiting administrator verification. Product creation and editing remain restricted until approval.'}
           </p>
           {store.verificationStatus === 'rejected' && (
-            <button
-              type="button"
-              onClick={handleResubmitApproval}
-              className="btn btn-sm btn-emerald mt-3"
-            >
+            <button type="button" onClick={handleResubmitApproval} className="btn btn-sm btn-emerald mt-3">
               Request Approval Again
             </button>
           )}
@@ -524,57 +592,54 @@ export default function StoreDashboard() {
 
       {/* KPI Stats Grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="card p-5 border-slate-200">
-          <div className="flex items-center justify-between text-slate-400 mb-2">
+        <div className="card p-5 border-[#E5E7EB]">
+          <div className="flex items-center justify-between text-[#667085] mb-2">
             <span className="text-xs font-bold uppercase tracking-wider">Catalog</span>
-            <Package className="h-4 w-4 text-brand-600" />
+            <Package className="h-4 w-4 text-[#16A36A]" />
           </div>
-          <p className="text-2xl sm:text-3xl font-black text-slate-900">{total}</p>
-          <p className="text-[11px] text-slate-500 mt-1">Total items listed</p>
+          <p className="text-2xl sm:text-3xl font-black text-[#172033]">{total}</p>
+          <p className="text-[11px] text-[#667085] mt-1">Total items listed</p>
         </div>
 
-        <div className="card p-5 border-slate-200">
-          <div className="flex items-center justify-between text-slate-400 mb-2">
-            <span className="text-xs font-bold uppercase tracking-wider">In Stock</span>
+        <div className="card p-5 border-[#E5E7EB]">
+          <div className="flex items-center justify-between text-[#667085] mb-2">
+            <span className="text-xs font-bold uppercase tracking-wider">Available</span>
             <CheckCircle2 className="h-4 w-4 text-emerald-600" />
           </div>
           <p className="text-2xl sm:text-3xl font-black text-emerald-600">{inStock}</p>
-          <p className="text-[11px] text-slate-500 mt-1">Ready to purchase</p>
+          <p className="text-[11px] text-[#667085] mt-1">Purchase or rental ready</p>
         </div>
 
-        <div className="card p-5 border-slate-200">
-          <div className="flex items-center justify-between text-slate-400 mb-2">
+        <div className="card p-5 border-[#E5E7EB]">
+          <div className="flex items-center justify-between text-[#667085] mb-2">
+            <span className="text-xs font-bold uppercase tracking-wider">Active Rentals</span>
+            <Calendar className="h-4 w-4 text-amber-600" />
+          </div>
+          <p className="text-2xl sm:text-3xl font-black text-amber-600">{activeRentalsCount}</p>
+          <p className="text-[11px] text-[#667085] mt-1">Pending / checked out</p>
+        </div>
+
+        <div className="card p-5 border-[#E5E7EB]">
+          <div className="flex items-center justify-between text-[#667085] mb-2">
             <span className="text-xs font-bold uppercase tracking-wider">Out of Stock</span>
             <AlertCircle className="h-4 w-4 text-rose-600" />
           </div>
           <p className="text-2xl sm:text-3xl font-black text-rose-600">{outOfStock}</p>
-          <p className="text-[11px] text-slate-500 mt-1">Needs replenishment</p>
-        </div>
-
-        <div className="card p-5 border-slate-200">
-          <div className="flex items-center justify-between text-slate-400 mb-2">
-            <span className="text-xs font-bold uppercase tracking-wider">Low Stock</span>
-            <AlertTriangle className="h-4 w-4 text-amber-600" />
-          </div>
-          <p className="text-2xl sm:text-3xl font-black text-amber-600">{lowStock}</p>
-          <p className="text-[11px] text-slate-500 mt-1">2 or fewer units left</p>
+          <p className="text-[11px] text-[#667085] mt-1">Purchase stock depleted</p>
         </div>
       </div>
 
       {/* EXPANDABLE ADD PRODUCT FORM */}
       {showAddForm && (
-        <div className="card border-2 border-brand-500/30 bg-brand-50/20 p-6 animate-in slide-in-from-top duration-200">
+        <div className="card border-2 border-[#16A36A]/30 bg-[#E8F5EE]/20 p-6 animate-in slide-in-from-top duration-200">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-brand-100 text-brand-700 flex items-center justify-center font-bold">
+              <div className="w-8 h-8 rounded-lg bg-[#C5E9D7] text-[#0E7055] flex items-center justify-center font-bold">
                 <Plus className="h-4 w-4" />
               </div>
-              <h2 className="text-base font-bold text-slate-900">Add New Gear to Store</h2>
+              <h2 className="text-base font-bold text-[#172033]">Add Gear (Purchase &amp; Rental)</h2>
             </div>
-            <button
-              onClick={() => setShowAddForm(false)}
-              className="rounded-lg p-1 text-slate-400 hover:text-slate-700"
-            >
+            <button onClick={() => setShowAddForm(false)} className="rounded-lg p-1 text-[#667085] hover:text-[#172033]">
               <X className="h-4 w-4" />
             </button>
           </div>
@@ -583,11 +648,7 @@ export default function StoreDashboard() {
             {isAdminView && allStores.length > 0 && (
               <div className="md:col-span-4">
                 <label className="label">Target Store *</label>
-                <select
-                  value={targetStoreId}
-                  onChange={(e) => setTargetStoreId(e.target.value)}
-                  className="input"
-                >
+                <select value={targetStoreId} onChange={(e) => setTargetStoreId(e.target.value)} className="input">
                   {allStores.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.storeName} ({s.verificationStatus || 'pending'})
@@ -596,25 +657,23 @@ export default function StoreDashboard() {
                 </select>
               </div>
             )}
+
             <div className="md:col-span-2">
-              <label className="label">Item Name</label>
+              <label className="label">Item Name *</label>
               <input
                 required
                 value={name}
-                onChange={e => setName(e.target.value)}
+                onChange={(e) => setName(e.target.value)}
                 className="input"
-                placeholder="e.g. Wilson NBA Official Basketball"
+                placeholder="e.g. Yonex Astrox Pro Badminton Racket"
               />
             </div>
+
             <div>
-              <label className="label">Sport / Game Category</label>
-              <select
-                value={sport}
-                onChange={e => setSport(e.target.value)}
-                className="input"
-              >
+              <label className="label">Sport *</label>
+              <select value={sport} onChange={(e) => setSport(e.target.value)} className="input">
                 {games.length > 0 ? (
-                  games.map(g => (
+                  games.map((g) => (
                     <option key={g.id} value={g.name}>{g.name}</option>
                   ))
                 ) : (
@@ -628,78 +687,151 @@ export default function StoreDashboard() {
                 )}
               </select>
             </div>
+
             <div>
-              <label className="label">Gear Category (Optional)</label>
-              <select
-                value={category}
-                onChange={e => setCategory(e.target.value)}
-                className="input"
-              >
+              <label className="label">Category</label>
+              <select value={category} onChange={(e) => setCategory(e.target.value)} className="input">
                 <option>Equipment</option>
                 <option>Apparel</option>
                 <option>Footwear</option>
                 <option>Accessories</option>
-                <option>Nutrition</option>
+                <option>Kit Bag</option>
                 <option>Other</option>
               </select>
             </div>
-            <div>
-              <label className="label">Price (₹)</label>
-              <input
-                type="number"
-                required
-                min="1"
-                value={price}
-                onChange={e => setPrice(e.target.value)}
-                className="input"
-                placeholder="e.g. 1499"
-              />
+
+            {/* Purchase & Rental Mode Toggles */}
+            <div className="md:col-span-4 grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+              <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 space-y-3">
+                <label className="flex items-center gap-2 text-xs font-bold text-[#172033] cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={allowPurchase}
+                    onChange={(e) => setAllowPurchase(e.target.checked)}
+                    className="rounded text-[#16A36A] h-4 w-4"
+                  />
+                  Enable Purchase (Buy Now)
+                </label>
+                {allowPurchase && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="label">Sale Price (₹) *</label>
+                      <input
+                        type="number"
+                        required={allowPurchase}
+                        min="1"
+                        value={price}
+                        onChange={(e) => setPrice(e.target.value)}
+                        className="input"
+                        placeholder="1499"
+                      />
+                    </div>
+                    <div>
+                      <label className="label">Sale Stock Qty *</label>
+                      <input
+                        type="number"
+                        required={allowPurchase}
+                        min="0"
+                        value={qty}
+                        onChange={(e) => setQty(e.target.value)}
+                        className="input"
+                        placeholder="10"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 space-y-3">
+                <label className="flex items-center gap-2 text-xs font-bold text-[#172033] cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={allowRental}
+                    onChange={(e) => setAllowRental(e.target.checked)}
+                    className="rounded text-[#16A36A] h-4 w-4"
+                  />
+                  Enable Gear Rental (Daily Rate &amp; Security Deposit)
+                </label>
+                {allowRental && (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <label className="label">Rate / Day (₹) *</label>
+                        <input
+                          type="number"
+                          required={allowRental}
+                          min="1"
+                          value={rentalPricePerDay}
+                          onChange={(e) => setRentalPricePerDay(e.target.value)}
+                          className="input"
+                          placeholder="150"
+                        />
+                      </div>
+                      <div>
+                        <label className="label">Deposit (₹)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          value={securityDeposit}
+                          onChange={(e) => setSecurityDeposit(e.target.value)}
+                          className="input"
+                          placeholder="500"
+                        />
+                      </div>
+                      <div>
+                        <label className="label">Rental Units *</label>
+                        <input
+                          type="number"
+                          required={allowRental}
+                          min="1"
+                          value={rentalQty}
+                          onChange={(e) => setRentalQty(e.target.value)}
+                          className="input"
+                          placeholder="3"
+                        />
+                      </div>
+                    </div>
+                    <label className="flex items-center gap-2 text-[11px] text-[#667085] cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={requiresIdProof}
+                        onChange={(e) => setRequiresIdProof(e.target.checked)}
+                        className="rounded text-[#16A36A] h-3.5 w-3.5"
+                      />
+                      Require private ID proof from renter (stored in secure vault)
+                    </label>
+                  </div>
+                )}
+              </div>
             </div>
-            <div>
-              <label className="label">Initial Stock Qty</label>
-              <input
-                type="number"
-                required
-                min="0"
-                value={qty}
-                onChange={e => setQty(e.target.value)}
-                className="input"
-                placeholder="e.g. 10"
-              />
-            </div>
-            <div className="md:col-span-3">
+
+            <div className="md:col-span-2">
               <label className="label">Product Description (Optional)</label>
               <textarea
                 rows={2}
                 value={description}
-                onChange={e => setDescription(e.target.value)}
+                onChange={(e) => setDescription(e.target.value)}
                 className="input text-xs"
-                placeholder="Product specifications, size guide, material info..."
+                placeholder="Specifications, size guide, rental condition..."
               />
             </div>
-            <div className="md:col-span-3">
+
+            <div className="md:col-span-2">
               <label className="label">Product Image URL (Optional)</label>
               <input
                 type="url"
                 value={productImageUrl}
-                onChange={e => setProductImageUrl(e.target.value)}
+                onChange={(e) => setProductImageUrl(e.target.value)}
                 className="input text-xs"
-                placeholder="https://images.unsplash.com/... or direct image link"
+                placeholder="https://images.unsplash.com/..."
               />
             </div>
-            <div className="md:col-span-3 flex flex-col sm:flex-row items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setShowAddForm(false)}
-                className="btn btn-secondary text-xs w-full sm:w-auto"
-              >
+
+            <div className="md:col-span-4 flex flex-col sm:flex-row items-center justify-end gap-2">
+              <button type="button" onClick={() => setShowAddForm(false)} className="btn btn-secondary text-xs w-full sm:w-auto">
                 Cancel
               </button>
-              <button
-                type="submit"
-                disabled={submittingProduct}
-                className="btn text-xs w-full sm:w-auto"
-              >
+              <button type="submit" disabled={submittingProduct} className="btn text-xs w-full sm:w-auto">
                 {submittingProduct ? 'Saving Product...' : 'Add to Catalog'}
               </button>
             </div>
@@ -707,28 +839,29 @@ export default function StoreDashboard() {
         </div>
       )}
 
-      {/* Main Grid: Inventory & Orders */}
+      {/* Main Grid: Inventory & Orders + Rentals */}
       <div className="grid lg:grid-cols-3 gap-8">
-        {/* Inventory Column (2 cols on LG) */}
+        {/* Inventory Column */}
         <div className="lg:col-span-2 space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-2">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center">
+              <div className="w-8 h-8 rounded-lg bg-[#E8F5EE] text-[#16A36A] flex items-center justify-center overflow-hidden">
                 <img src="/icons/gear.jpg" alt="Gear" className="w-full h-full object-cover" />
               </div>
-              <h2 className="text-lg font-extrabold text-slate-900">
+              <h2 className="text-lg font-extrabold text-[#172033]">
                 Inventory Catalog ({filteredProducts.length})
               </h2>
             </div>
 
-            {/* Quick Sport Filter */}
             <div className="flex items-center gap-1 text-xs">
-              {['All', 'Basketball', 'Football', 'Cricket'].map(s => (
+              {['All', 'Basketball', 'Football', 'Cricket', 'Badminton'].map((s) => (
                 <button
                   key={s}
                   onClick={() => setFilterSport(s)}
                   className={`px-2.5 py-1 rounded-lg font-bold transition ${
-                    filterSport === s ? 'bg-[#2563EB] text-white shadow-xs' : 'text-[#64748B] hover:bg-slate-100'
+                    filterSport === s
+                      ? 'bg-[#101828] text-white shadow-xs'
+                      : 'text-[#667085] hover:bg-slate-100'
                   }`}
                 >
                   {s}
@@ -740,14 +873,11 @@ export default function StoreDashboard() {
           {products.length === 0 ? (
             <div className="card text-center py-12">
               <Package className="h-10 w-10 text-slate-300 mx-auto mb-2" />
-              <h3 className="text-sm font-bold text-slate-700">No products added yet</h3>
-              <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-                Add equipment to your pro shop to make it visible to local athletes.
+              <h3 className="text-sm font-bold text-[#172033]">No products added yet</h3>
+              <p className="text-xs text-[#667085] mt-1 max-w-sm mx-auto">
+                Add equipment for purchase or rental to make it visible to athletes.
               </p>
-              <button
-                onClick={() => setShowAddForm(true)}
-                className="btn btn-sm btn-emerald mt-4"
-              >
+              <button onClick={() => setShowAddForm(true)} className="btn btn-sm btn-emerald mt-4">
                 <Plus className="h-4 w-4" />
                 Add Your First Item
               </button>
@@ -760,14 +890,14 @@ export default function StoreDashboard() {
                 return (
                   <div
                     key={p.id}
-                    className="card p-4 border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                    className="card p-4 border-[#E5E7EB] flex flex-col sm:flex-row sm:items-center justify-between gap-4"
                   >
                     <div className="flex items-start gap-3">
                       {p.image ? (
                         <img
                           src={p.image}
                           alt={p.name}
-                          className="h-14 w-14 rounded-xl object-cover border border-slate-200 shrink-0"
+                          className="h-14 w-14 rounded-xl object-cover border border-[#E5E7EB] shrink-0"
                         />
                       ) : (
                         <div className="h-14 w-14 rounded-xl bg-slate-100 flex items-center justify-center text-slate-400 shrink-0">
@@ -776,48 +906,53 @@ export default function StoreDashboard() {
                       )}
                       <div>
                         <div className="flex items-center gap-2 flex-wrap">
-                          <h4 className="font-bold text-base text-slate-900">{p.name}</h4>
+                          <h4 className="font-bold text-base text-[#172033]">{p.name}</h4>
                           <span className="badge badge-brand text-[10px]">{p.sport}</span>
-                          {p.category && (
-                            <span className="badge bg-slate-100 text-slate-600 border border-slate-200 text-[10px]">
-                              {p.category}
+                          {p.allowPurchase !== false && (
+                            <span className="badge badge-navy text-[10px]">Buy ₹{p.price}</span>
+                          )}
+                          {p.allowRental && (
+                            <span className="badge bg-amber-50 text-amber-800 border border-amber-200 text-[10px]">
+                              Rent ₹{p.rentalPricePerDay}/day · Deposit ₹{p.securityDeposit || 0}
                             </span>
                           )}
-                          {isOut && <span className="badge badge-bad text-[10px]">Out of stock</span>}
+                          {isOut && p.allowPurchase !== false && (
+                            <span className="badge badge-bad text-[10px]">Out of stock</span>
+                          )}
                           {isLow && <span className="badge badge-warn text-[10px]">Low stock</span>}
                         </div>
                         {p.description && (
-                          <p className="text-xs text-slate-600 mt-1 line-clamp-1">{p.description}</p>
+                          <p className="text-xs text-[#667085] mt-1 line-clamp-1">{p.description}</p>
                         )}
-                        <p className="text-[11px] text-slate-400 mt-0.5">ID: {p.id.slice(0, 8)}</p>
+                        <p className="text-[11px] text-[#98A2B3] mt-0.5">
+                          ID: {p.id.slice(0, 8)} {p.allowRental ? `· Rental units: ${p.rentalQty ?? p.qty}` : ''}
+                        </p>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-4 justify-between sm:justify-end">
-                      {/* Qty Controls */}
-                      <div className="flex items-center gap-2 bg-slate-50 rounded-xl border border-slate-200 p-1">
+                    <div className="flex items-center gap-3 justify-between sm:justify-end">
+                      <div className="flex items-center gap-2 bg-[#F8FAFC] rounded-xl border border-[#E5E7EB] p-1">
                         <button
                           onClick={() => updateQty(p.id, p.qty, -1)}
-                          className="h-7 w-7 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-600 font-bold hover:bg-slate-100 transition"
+                          className="h-7 w-7 rounded-lg bg-white border border-[#E5E7EB] flex items-center justify-center text-[#172033] font-bold hover:bg-slate-100 transition"
                           title="Decrease stock"
                         >
                           −
                         </button>
-                        <span className="font-extrabold text-sm w-7 text-center text-slate-900">
+                        <span className="font-extrabold text-sm w-7 text-center text-[#172033]">
                           {p.qty}
                         </span>
                         <button
                           onClick={() => updateQty(p.id, p.qty, 1)}
-                          className="h-7 w-7 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-600 font-bold hover:bg-slate-100 transition"
+                          className="h-7 w-7 rounded-lg bg-white border border-[#E5E7EB] flex items-center justify-center text-[#172033] font-bold hover:bg-slate-100 transition"
                           title="Increase stock"
                         >
                           +
                         </button>
                       </div>
 
-                      {/* Price editor */}
-                      <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-2.5 py-1 text-xs">
-                        <span className="font-bold text-slate-400">₹</span>
+                      <div className="flex items-center gap-1 rounded-xl border border-[#E5E7EB] bg-white px-2.5 py-1 text-xs">
+                        <span className="font-bold text-[#667085]">₹</span>
                         <input
                           type="number"
                           defaultValue={p.price}
@@ -828,8 +963,8 @@ export default function StoreDashboard() {
                       </div>
 
                       <button
-                        onClick={() => deleteProduct(p.id)}
-                        className="text-slate-400 hover:text-rose-600 transition p-1"
+                        onClick={() => setProductToDelete(p)}
+                        className="text-[#667085] hover:text-rose-600 transition p-1"
                         title="Delete product"
                       >
                         <Trash2 className="h-4 w-4" />
@@ -842,68 +977,206 @@ export default function StoreDashboard() {
           )}
         </div>
 
-        {/* Customer Orders & Fulfillment Column */}
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
+        {/* Orders & Rentals Column */}
+        <div className="space-y-6">
+          {/* Purchase Orders */}
+          <div className="space-y-3">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-lg bg-sky-50 text-sky-600 flex items-center justify-center">
                 <Truck className="h-4 w-4" />
               </div>
-              <h2 className="text-lg font-extrabold text-slate-900">
-                Customer Orders ({orders.length})
+              <h2 className="text-lg font-extrabold text-[#172033]">
+                Purchase Orders ({orders.length})
               </h2>
             </div>
-          </div>
 
-          {orders.length === 0 ? (
-            <div className="card text-center py-10">
-              <Truck className="h-8 w-8 text-slate-300 mx-auto mb-2" />
-              <p className="text-xs text-slate-500">No incoming customer orders yet.</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {orders.map((o) => {
-                const isShipped = o.status === 'shipped';
-                return (
+            {orders.length === 0 ? (
+              <div className="card text-center py-8">
+                <Truck className="h-7 w-7 text-slate-300 mx-auto mb-2" />
+                <p className="text-xs text-[#667085]">No purchase orders yet.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {orders.map((o) => (
                   <div
                     key={o.id}
-                    className={`card p-4 border-slate-200 transition ${
-                      isShipped ? 'bg-slate-50/70' : 'border-l-4 border-l-brand-500'
+                    className={`card p-4 border-[#E5E7EB] transition ${
+                      o.status === 'delivered' || o.status === 'shipped'
+                        ? 'bg-slate-50/70'
+                        : 'border-l-4 border-l-[#16A36A]'
                     }`}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div>
-                        <h4 className="font-bold text-sm text-slate-900">{o.productName}</h4>
-                        <p className="text-xs text-slate-500 mt-0.5">
-                          Qty: <span className="font-semibold text-slate-800">{o.qty}</span> · Total: <span className="font-extrabold text-brand-600">₹{o.total}</span>
+                        <h4 className="font-bold text-sm text-[#172033]">{o.productName}</h4>
+                        <p className="text-xs text-[#667085] mt-0.5">
+                          Qty: <span className="font-semibold text-[#172033]">{o.qty}</span> · Total:{' '}
+                          <span className="font-extrabold text-[#16A36A]">₹{o.total}</span>
+                        </p>
+                        <p className="text-[10px] text-amber-700 font-semibold mt-0.5">
+                          Payment: {o.paymentStatus || 'unpaid'}
                         </p>
                       </div>
-                      <span className={`badge text-[10px] ${isShipped ? 'badge-ok' : 'badge-warn'}`}>
+                      <span
+                        className={`badge text-[10px] uppercase ${
+                          o.status === 'delivered' || o.status === 'shipped'
+                            ? 'badge-ok'
+                            : 'badge-warn'
+                        }`}
+                      >
                         {o.status}
                       </span>
                     </div>
 
-                    <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
-                      <span className="text-[11px] text-slate-400 font-mono">
-                        #{o.id.slice(0, 6)}
+                    <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-xs gap-2 flex-wrap">
+                      <span className="text-[11px] text-[#98A2B3] font-mono">#{o.id.slice(0, 6)}</span>
+                      <div className="flex items-center gap-2">
+                        {o.status === 'pending' && (
+                          <button
+                            onClick={() => handleOrderStatus(o.id, 'confirmed')}
+                            className="font-bold text-[#101828] hover:underline"
+                          >
+                            Confirm
+                          </button>
+                        )}
+                        {(o.status === 'pending' || o.status === 'confirmed') && (
+                          <button
+                            onClick={() => handleOrderStatus(o.id, 'shipped')}
+                            className="inline-flex items-center gap-1 font-bold text-[#16A36A] hover:text-[#0E7055]"
+                          >
+                            <Check className="h-3.5 w-3.5" />
+                            Ship
+                          </button>
+                        )}
+                        {o.status === 'shipped' && (
+                          <button
+                            onClick={() => handleOrderStatus(o.id, 'delivered')}
+                            className="inline-flex items-center gap-1 font-bold text-emerald-700 hover:underline"
+                          >
+                            Mark Delivered
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Gear Rentals Management */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center">
+                <Calendar className="h-4 w-4" />
+              </div>
+              <h2 className="text-lg font-extrabold text-[#172033]">
+                Gear Rentals ({rentals.length})
+              </h2>
+            </div>
+
+            {rentals.length === 0 ? (
+              <div className="card text-center py-8">
+                <Calendar className="h-7 w-7 text-slate-300 mx-auto mb-2" />
+                <p className="text-xs text-[#667085]">No gear rentals yet.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {rentals.map((r) => (
+                  <div key={r.id} className="card p-4 border-[#E5E7EB] space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <h4 className="font-bold text-sm text-[#172033]">{r.productName}</h4>
+                        <p className="text-[11px] text-[#667085]">
+                          {r.startDate} → {r.returnDate} ({r.durationDays}d · Qty {r.qty})
+                        </p>
+                        <p className="text-[11px] text-[#172033] font-semibold mt-0.5">
+                          Rental ₹{r.rentalSubtotal} + Deposit ₹{r.securityDeposit || 0} ({r.depositStatus})
+                        </p>
+                        <p className="text-[10px] text-amber-700 font-semibold">
+                          Payment: {r.paymentStatus || 'unpaid'}
+                        </p>
+                      </div>
+                      <span
+                        className={`badge text-[10px] uppercase ${
+                          r.status === 'returned'
+                            ? 'badge-ok'
+                            : r.status === 'overdue' || r.status === 'cancelled'
+                            ? 'badge-bad'
+                            : 'badge-warn'
+                        }`}
+                      >
+                        {r.status}
                       </span>
-                      {!isShipped && (
-                        <button
-                          onClick={() => handleFulfill(o.id)}
-                          className="inline-flex items-center gap-1 font-bold text-brand-600 hover:text-brand-700 transition"
-                        >
-                          <Check className="h-3.5 w-3.5" />
-                          Mark Shipped
-                        </button>
+                    </div>
+
+                    {r.privateDocUrl && (
+                      <a
+                        href={r.privateDocUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-[11px] font-bold text-[#16A36A] hover:underline"
+                      >
+                        <ShieldCheck className="h-3.5 w-3.5" />
+                        View Private ID Proof <ExternalLink className="h-3 w-3" />
+                      </a>
+                    )}
+
+                    <div className="pt-2 border-t border-slate-100 flex items-center gap-2 flex-wrap text-[11px]">
+                      {r.status === 'pending' && (
+                        <>
+                          <button
+                            onClick={() => handleRentalStatus(r.id, 'active')}
+                            className="btn btn-sm text-[11px] py-1 px-2.5"
+                          >
+                            Mark Active (Picked Up)
+                          </button>
+                          <button
+                            onClick={() => handleRentalStatus(r.id, 'cancelled')}
+                            className="btn-secondary btn-sm text-[11px] py-1 px-2"
+                          >
+                            Cancel
+                          </button>
+                        </>
+                      )}
+                      {(r.status === 'active' || r.status === 'overdue') && (
+                        <>
+                          <button
+                            onClick={() => handleRentalStatus(r.id, 'returned')}
+                            className="btn btn-sm text-[11px] py-1 px-2.5"
+                          >
+                            Mark Returned &amp; Release Deposit
+                          </button>
+                          {r.status === 'active' && (
+                            <button
+                              onClick={() => handleRentalStatus(r.id, 'overdue')}
+                              className="btn-danger btn-sm text-[11px] py-1 px-2"
+                            >
+                              Mark Overdue
+                            </button>
+                          )}
+                        </>
                       )}
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          )}
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
+
+      {/* Product Deletion Confirmation Modal */}
+      <DeleteConfirmModal
+        isOpen={!!productToDelete}
+        onClose={() => setProductToDelete(null)}
+        onConfirm={handleConfirmDeleteProduct}
+        title="Delete Product"
+        recordName={productToDelete?.name || ''}
+        recordType="Product"
+        warningText="Deletes this item from catalog and removes associated ratings/images. Historical financial orders are preserved; deletion is blocked if active rentals exist."
+        loading={deletingProduct}
+      />
     </div>
   );
 }

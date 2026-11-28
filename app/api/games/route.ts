@@ -5,6 +5,7 @@ import { verifySession } from '@/lib/auth/session';
 import { isAdmin } from '@/lib/auth/admin';
 import { ok, fail } from '@/lib/api/response';
 import { logActivity } from '@/lib/firebase/activity';
+import { checkAndEnforcePlayerVerification } from '@/lib/verification/player';
 
 /**
  * Sports & Games Catalog API
@@ -98,9 +99,38 @@ export async function POST(req: NextRequest) {
     }
 
     const adminUser = await isAdmin(session.uid);
-    // Non-admins can only register custom sports if isCustom is true
-    if (!adminUser && !parsed.data.isCustom) {
-      return fail('forbidden', 'Only administrators can add catalog games', 403);
+    // Non-admins can only register custom sports if isCustom is true and account is active/not suspended
+    if (!adminUser) {
+      if (!parsed.data.isCustom) {
+        return fail('forbidden', 'Only administrators can add catalog games', 403);
+      }
+      const rolesSnap = await adminDb
+        .collection('userRoles')
+        .where('userId', '==', session.uid)
+        .where('status', '==', 'active')
+        .get();
+      const activeRoles = rolesSnap.docs.map((d: any) => d.data().roleId as string);
+      if (activeRoles.length === 0) {
+        const verif = await checkAndEnforcePlayerVerification(session.uid);
+        if (!verif.canAccessRestrictedFeatures) {
+          return fail(
+            'account_suspended',
+            'Your account is suspended due to expired 5-day verification. Submit proof to add custom sports.',
+            403
+          );
+        }
+        return fail('forbidden', 'Active account role required to add custom sports', 403);
+      }
+      if (activeRoles.includes('player') && !activeRoles.includes('academy') && !activeRoles.includes('store')) {
+        const verif = await checkAndEnforcePlayerVerification(session.uid);
+        if (!verif.canAccessRestrictedFeatures) {
+          return fail(
+            'account_suspended',
+            'Your account is suspended due to expired 5-day verification. Submit proof to add custom sports.',
+            403
+          );
+        }
+      }
     }
 
     const normalizedName = normalizeSportName(parsed.data.name);

@@ -1,10 +1,11 @@
 import { NextRequest } from 'next/server';
-import { adminAuth, adminDb } from '@/lib/firebase/admin';
+import { adminDb } from '@/lib/firebase/admin';
 import { verifySession } from '@/lib/auth/session';
-import { isAdmin, isSuperAdmin } from '@/lib/auth/admin';
+import { isAdmin, isProtectedPermanentAdmin, isSuperAdmin } from '@/lib/auth/admin';
+import { purgeUserAccountCascade } from '@/lib/services/deletion';
 import { ok, fail } from '@/lib/api/response';
 import { logActivity } from '@/lib/firebase/activity';
-
+import { dispatchNotification } from '@/lib/notifications/dispatch';
 
 export async function GET() {
   const session = await verifySession();
@@ -12,33 +13,55 @@ export async function GET() {
   if (!(await isAdmin(session.uid))) return fail('forbidden', 'Admin access required', 403);
 
   try {
-    const [usersSnap, rolesSnap] = await Promise.all([
+    const [usersSnap, rolesSnap, profilesSnap, delReqSnap] = await Promise.all([
       adminDb.collection('users').get(),
       adminDb.collection('userRoles').get(),
+      adminDb.collection('playerProfiles').get(),
+      adminDb.collection('accountDeletionRequests').get(),
     ]);
 
-    // Map roles by userId
     const userRolesMap = new Map<string, string[]>();
     rolesSnap.docs.forEach((d: any) => {
       const data = d.data();
-      const existing = userRolesMap.get(data.userId) || [];
-      existing.push(data.roleId);
-      userRolesMap.set(data.userId, existing);
+      if (data.status === 'active' || data.status === 'suspended') {
+        const existing = userRolesMap.get(data.userId) || [];
+        if (!existing.includes(data.roleId)) existing.push(data.roleId);
+        userRolesMap.set(data.userId, existing);
+      }
     });
 
-    const users = usersSnap.docs.map((d: any) => {
+    const profileMap = new Map<string, any>();
+    profilesSnap.docs.forEach((d: any) => profileMap.set(d.id, d.data()));
+
+    const delReqMap = new Map<string, any>();
+    delReqSnap.docs.forEach((d: any) => {
       const data = d.data();
-      return {
-        id: d.id,
-        fullName: data.fullName || 'User',
-        email: data.email || '',
-        accountStatus: data.accountStatus || 'active',
-        address: data.address || '',
-        roles: userRolesMap.get(d.id) || ['player'],
-        createdAt: data.createdAt || 0,
-      };
+      if (data.status === 'pending') delReqMap.set(data.userId, { id: d.id, ...data });
     });
 
+    const users = await Promise.all(
+      usersSnap.docs.map(async (d: any) => {
+        const data = d.data();
+        const prof = profileMap.get(d.id) || {};
+        const protectedAdmin = await isProtectedPermanentAdmin(d.id, data.email);
+        return {
+          id: d.id,
+          fullName: data.fullName || 'User',
+          email: data.email || '',
+          accountStatus: data.accountStatus || 'active',
+          suspensionReason: data.suspensionReason || null,
+          address: data.address || '',
+          roles: userRolesMap.get(d.id) || ['player'],
+          verificationStatus: prof.verificationStatus || null,
+          verificationDeadline: prof.verificationDeadline || null,
+          isProtectedAdmin: protectedAdmin,
+          deletionRequest: delReqMap.get(d.id) || null,
+          createdAt: data.createdAt || 0,
+        };
+      })
+    );
+
+    users.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
     return ok(users);
   } catch (e: any) {
     return fail('server_error', e.message, 500);
@@ -68,84 +91,74 @@ export async function DELETE(req: NextRequest) {
     if (!userSnap.exists) {
       return fail('not_found', 'User record not found', 404);
     }
-    const userData = userSnap.data();
+    const userData = userSnap.data()!;
 
-    // Only the trusted Super Admin may permanently delete accounts or manage other admins.
-    const actorIsSuperAdmin = await isSuperAdmin(session.uid);
-    const targetIsSuperAdmin = await isSuperAdmin(userId);
+    const actorIsSuperAdmin = await isSuperAdmin(session.uid, session.email);
+    const targetIsProtected = await isProtectedPermanentAdmin(userId, userData.email);
 
-    if (targetIsSuperAdmin) {
-      return fail('forbidden', 'The trusted Super Admin account cannot be deleted or suspended', 403);
+    if (targetIsProtected) {
+      return fail('forbidden', 'Permanent administrator accounts cannot be deleted or suspended', 403);
     }
 
     if (permanent && !actorIsSuperAdmin) {
-      return fail('forbidden', 'Only the Super Admin can permanently delete user accounts', 403);
+      return fail('forbidden', 'Only permanent administrators can permanently delete user accounts', 403);
     }
 
-    const targetRolesSnap = await adminDb.collection('userRoles')
+    const targetRolesSnap = await adminDb
+      .collection('userRoles')
       .where('userId', '==', userId)
       .where('roleId', '==', 'admin')
       .where('status', '==', 'active')
       .get();
 
     if (!targetRolesSnap.empty && !actorIsSuperAdmin) {
-      return fail('forbidden', 'Only the Super Admin can manage another active administrator', 403);
+      return fail('forbidden', 'Only permanent administrators can manage another active administrator', 403);
     }
 
     if (permanent) {
-      // Delete Firebase Authentication account first.
-      try {
-        await adminAuth.deleteUser(userId);
-      } catch (authError: any) {
-        if (authError?.code !== 'auth/user-not-found') throw authError;
+      const res = await purgeUserAccountCascade(userId, session.uid);
+      if (res.status !== 200) {
+        return fail('forbidden', res.error || 'Could not purge user', res.status);
       }
 
-      const rolesSnap = await adminDb.collection('userRoles')
+      // Close any pending account deletion requests for this user
+      const reqSnap = await adminDb
+        .collection('accountDeletionRequests')
         .where('userId', '==', userId)
         .get();
-
-      // Keep Firestore batches below the 500-operation limit.
-      const firstBatch = adminDb.batch();
-      firstBatch.delete(userRef);
-      firstBatch.delete(adminDb.collection('playerProfiles').doc(userId));
-      firstBatch.delete(adminDb.collection('stores').doc(userId));
-      firstBatch.delete(adminDb.collection('academies').doc(userId));
-      firstBatch.delete(adminDb.collection('staffProfiles').doc(userId));
-      await firstBatch.commit();
-
-      for (let i = 0; i < rolesSnap.docs.length; i += 400) {
-        const batch = adminDb.batch();
-        rolesSnap.docs.slice(i, i + 400).forEach((d: any) => batch.delete(d.ref));
-        await batch.commit();
+      for (const r of reqSnap.docs) {
+        await r.ref.update({ status: 'completed', processedAt: Date.now(), processedBy: session.uid });
       }
 
-      await logActivity({
-        userId: session.uid,
-        userName: 'Administrator',
-        action: 'user_purged',
-        entityType: 'user',
-        entityId: userId,
-        details: `Permanently deleted user account "${userData?.fullName || userData?.email || userId}"`,
-      });
-
-      return ok({ success: true, userId, status: 'purged' });
+      return ok(res.data);
     } else {
-      // SAFE SUSPENSION / SOFT DELETE
+      const now = Date.now();
       await userRef.update({
         accountStatus: 'suspended',
-        suspendedAt: Date.now(),
+        suspensionReason: 'admin_suspended',
+        suspendedAt: now,
         suspendedBy: session.uid,
+        updatedAt: now,
       });
 
-      // Deactivate all role bindings
       const rolesSnap = await adminDb.collection('userRoles').where('userId', '==', userId).get();
       for (let i = 0; i < rolesSnap.docs.length; i += 400) {
         const batch = adminDb.batch();
         rolesSnap.docs.slice(i, i + 400).forEach((d: any) => {
-          batch.update(d.ref, { status: 'suspended' });
+          batch.update(d.ref, { status: 'suspended', suspensionReason: 'admin_suspended', updatedAt: now });
         });
         await batch.commit();
       }
+
+      await dispatchNotification({
+        title: 'Account Suspended',
+        message: 'Your PlayNex account has been suspended by an administrator. Contact support for assistance.',
+        category: 'system',
+        targetRole: 'player',
+        recipientId: userId,
+        targetUserId: userId,
+        link: '/player',
+      });
 
       await logActivity({
         userId: session.uid,
@@ -182,6 +195,7 @@ export async function PATCH(req: NextRequest) {
     const now = Date.now();
     await userRef.update({
       accountStatus: 'active',
+      suspensionReason: null,
       reactivatedAt: now,
       reactivatedBy: session.uid,
       updatedAt: now,
@@ -192,11 +206,21 @@ export async function PATCH(req: NextRequest) {
       const batch = adminDb.batch();
       rolesSnap.docs.slice(i, i + 400).forEach((d: any) => {
         if (d.data().status === 'suspended') {
-          batch.update(d.ref, { status: 'active', updatedAt: now });
+          batch.update(d.ref, { status: 'active', suspensionReason: null, updatedAt: now });
         }
       });
       await batch.commit();
     }
+
+    await dispatchNotification({
+      title: 'Account Reactivated',
+      message: 'Your PlayNex account access has been restored by an administrator.',
+      category: 'system',
+      targetRole: 'player',
+      recipientId: userId,
+      targetUserId: userId,
+      link: '/player',
+    });
 
     await logActivity({
       userId: session.uid,
@@ -212,4 +236,3 @@ export async function PATCH(req: NextRequest) {
     return fail('server_error', e.message || 'Failed to reactivate user', 500);
   }
 }
-

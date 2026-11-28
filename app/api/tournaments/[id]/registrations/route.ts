@@ -2,8 +2,11 @@ import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { adminDb } from '@/lib/firebase/admin';
 import { verifySession } from '@/lib/auth/session';
+import { isAdmin as checkAdminAccess } from '@/lib/auth/admin';
 import { ok, fail } from '@/lib/api/response';
 import { logActivity, sendNotification } from '@/lib/firebase/activity';
+import { checkAndEnforcePlayerVerification } from '@/lib/verification/player';
+import { getUserOwnedAcademyIds } from '@/lib/academies/resolve';
 
 async function getUserRoles(uid: string) {
   const snap = await adminDb.collection('userRoles')
@@ -21,9 +24,11 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     const eventDoc = await adminDb.collection('events').doc(params.id).get();
     if (!eventDoc.exists) return fail('not_found', 'Tournament not found', 404);
 
-    const roles = await getUserRoles(session.uid);
-    const isAdmin = roles.includes('admin');
-    const isOwner = eventDoc.data()?.academyId === session.uid;
+    const [isAdmin, ownedAcademyIds] = await Promise.all([
+      checkAdminAccess(session.uid),
+      getUserOwnedAcademyIds(session.uid),
+    ]);
+    const isOwner = ownedAcademyIds.has(eventDoc.data()?.academyId);
 
     let query: any = adminDb.collection('registrations').where('eventId', '==', params.id);
     if (!isAdmin && !isOwner) {
@@ -46,6 +51,15 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await verifySession();
   if (!session) return fail('unauthorized', 'Login required', 401);
+
+  const verif = await checkAndEnforcePlayerVerification(session.uid);
+  if (!verif.canAccessRestrictedFeatures) {
+    return fail(
+      'account_suspended',
+      'Your account is suspended due to expired 5-day verification. Submit proof to register for tournaments.',
+      403
+    );
+  }
 
   const eventRef = adminDb.collection('events').doc(params.id);
 
@@ -197,14 +211,14 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const session = await verifySession();
   if (!session) return fail('unauthorized', 'Login required', 401);
 
-  const roles = await getUserRoles(session.uid);
-  const isAdmin = roles.includes('admin');
+  const isAdmin = await checkAdminAccess(session.uid);
 
   try {
     const eventDoc = await adminDb.collection('events').doc(params.id).get();
     if (!eventDoc.exists) return fail('not_found', 'Tournament not found', 404);
 
-    const isOwner = eventDoc.data()?.academyId === session.uid;
+    const ownedAcademyIds = await getUserOwnedAcademyIds(session.uid);
+    const isOwner = ownedAcademyIds.has(eventDoc.data()?.academyId);
     if (!isAdmin && !isOwner) {
       return fail('forbidden', 'Only tournament organizers can manage registrations', 403);
     }
@@ -241,4 +255,3 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return fail('server_error', e.message, 500);
   }
 }
-

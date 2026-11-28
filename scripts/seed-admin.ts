@@ -12,18 +12,18 @@
  * It is safe to run multiple times — all writes use merge/set semantics.
  */
 
-import { adminAuth, adminDb } from '../lib/firebase/admin';
+import { adminAuth, adminDb } from '../lib/firebase/admin-core';
 
 const ADMINS = [
   {
     uid: 'lGRNmCBnf1TDHTPEE052uvHqC9D2',
     email: 'balajipanchireddy@gmail.com',
-    name: 'Balaji Panchireddy',
+    name: 'Super Admin Balaji',
   },
   {
     uid: 'HZAcvx31iWQzEaO21goOXYkImhG3',
     email: 'gowthamisindhu27@gmail.com',
-    name: 'Gowthamis Indhu',
+    name: 'Gowthami Sindhu',
   },
 ];
 

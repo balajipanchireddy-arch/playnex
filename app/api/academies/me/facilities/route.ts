@@ -6,10 +6,16 @@ import { isAdmin } from '@/lib/auth/admin';
 import { ok, fail } from '@/lib/api/response';
 import { dispatchNotification } from '@/lib/notifications/dispatch';
 import { logActivity } from '@/lib/firebase/activity';
+import { deleteFacilityCascade } from '@/lib/services/deletion';
+import { isValidCoordinates } from '@/lib/location/geo';
+import { findUserAcademyDoc, getUserOwnedAcademyIds } from '@/lib/academies/resolve';
 
 const Body = z.object({
   name: z.string().min(2),
   address: z.string().optional().default(''),
+  city: z.string().optional().default(''),
+  lat: z.number().optional().nullable(),
+  lng: z.number().optional().nullable(),
   description: z.string().optional().default(''),
   contact: z.string().optional().default(''),
   sport: z.string().min(2),
@@ -18,7 +24,9 @@ const Body = z.object({
 });
 
 async function isAcademyOrAdmin(uid: string) {
-  const snap = await adminDb.collection('userRoles')
+  if (await isAdmin(uid)) return true;
+  const snap = await adminDb
+    .collection('userRoles')
     .where('userId', '==', uid)
     .where('status', '==', 'active')
     .get();
@@ -27,7 +35,8 @@ async function isAcademyOrAdmin(uid: string) {
 }
 
 async function isApprovedAcademy(uid: string): Promise<boolean> {
-  const roleSnap = await adminDb.collection('userRoles')
+  const roleSnap = await adminDb
+    .collection('userRoles')
     .where('userId', '==', uid)
     .where('roleId', '==', 'academy')
     .where('status', '==', 'active')
@@ -36,19 +45,24 @@ async function isApprovedAcademy(uid: string): Promise<boolean> {
 
   if (roleSnap.empty) return false;
 
-  const academyDoc = await adminDb.collection('academies').doc(uid).get();
-  return academyDoc.exists &&
-    academyDoc.data()?.verificationStatus === 'approved';
+  const academyDoc = await findUserAcademyDoc(uid);
+  return Boolean(academyDoc && academyDoc.data()?.verificationStatus === 'approved');
 }
 
 export async function GET() {
   const session = await verifySession();
   if (!session) return fail('unauthorized', 'Login required', 401);
   try {
-    const snap = await adminDb.collection('facilities').where('academyId', '==', session.uid).get();
+    const ownedIds = Array.from(await getUserOwnedAcademyIds(session.uid)).slice(0, 30);
+    const snap = await adminDb
+      .collection('facilities')
+      .where('academyId', 'in', ownedIds)
+      .get();
     const facilities = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
     return ok(facilities);
-  } catch (e: any) { return fail('server_error', e.message, 500); }
+  } catch (e: any) {
+    return fail('server_error', e.message, 500);
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -57,27 +71,50 @@ export async function POST(req: NextRequest) {
 
   const adminUser = await isAdmin(session.uid);
   if (!adminUser && !(await isApprovedAcademy(session.uid))) {
-    return fail('forbidden', 'Your academy must be approved by PlayNex Admin before adding grounds.', 403);
+    return fail(
+      'forbidden',
+      'Your academy must be approved by PlayNex Admin before adding grounds.',
+      403
+    );
   }
 
   try {
     const parsed = Body.safeParse(await req.json());
     if (!parsed.success) return fail('invalid', 'Invalid input payload', 400);
-    const { name, address, description, contact, sport, price, image } = parsed.data;
+    const { name, address, city, lat, lng, description, contact, sport, price, image } = parsed.data;
+
+    let validatedLocation: { lat: number; lng: number } | null = null;
+    if (lat !== undefined && lat !== null && lng !== undefined && lng !== null) {
+      if (!isValidCoordinates(lat, lng)) {
+        return fail('invalid', 'Invalid latitude/longitude coordinates', 400);
+      }
+      validatedLocation = { lat, lng };
+    }
 
     const defaultSlots: Record<string, boolean> = {};
     for (let i = 6; i <= 22; i++) defaultSlots[i.toString()] = true;
 
-    const academyDoc = await adminDb.collection('academies').doc(session.uid).get();
-    const academyName = academyDoc.exists ? academyDoc.data()?.academyName : 'Sports Academy';
-    const academyVerification = academyDoc.exists ? academyDoc.data()?.verificationStatus : 'pending';
+    const academyDoc = await findUserAcademyDoc(session.uid);
+    const resolvedAcademyId = academyDoc?.id || session.uid;
+    const academyData = academyDoc ? academyDoc.data() : null;
+    const academyName = academyData?.academyName || 'Sports Academy';
+    const academyVerification = academyData?.verificationStatus || (adminUser ? 'approved' : 'pending');
+
+    // Fall back to academy coordinates only if academy has real coordinates and ground didn't override
+    const finalLocation =
+      validatedLocation ||
+      (academyData?.location && isValidCoordinates(academyData.location.lat, academyData.location.lng)
+        ? { lat: academyData.location.lat, lng: academyData.location.lng }
+        : null);
 
     const docRef = await adminDb.collection('facilities').add({
-      academyId: session.uid,
+      academyId: resolvedAcademyId,
       academyName,
       academyVerification,
       name,
-      address: address || '',
+      address: address || academyData?.address || '',
+      city: city || academyData?.city || '',
+      location: finalLocation,
       description: description || '',
       contact: contact || '',
       sport,
@@ -87,10 +124,9 @@ export async function POST(req: NextRequest) {
       ratingCount: 0,
       slots: defaultSlots,
       closed: false,
-      createdAt: Date.now()
+      createdAt: Date.now(),
     });
 
-    // Ensure the ground's sport exists in the `games` catalog (deduplicated by slug)
     const sportTrimmed = sport.trim();
     const sportSlug = sportTrimmed.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
     if (sportSlug) {
@@ -123,8 +159,6 @@ export async function POST(req: NextRequest) {
       details: `${academyName} added venue "${name}" (${sport}) at ₹${price}/hr`,
     });
 
-    // AUTOMATIC ACADEMY-TO-PLAYER NOTIFICATION:
-    // Inform athletes interested in this sport about the new venue
     await dispatchNotification({
       title: `New Turf Arena: ${name}`,
       message: `${academyName} opened ${name} for ${sport} bookings${address ? ` at ${address}` : ''}. Hourly rate: ₹${price}/hr.`,
@@ -137,7 +171,9 @@ export async function POST(req: NextRequest) {
     });
 
     return ok({ success: true, id: docRef.id });
-  } catch (e: any) { return fail('server_error', e.message, 500); }
+  } catch (e: any) {
+    return fail('server_error', e.message, 500);
+  }
 }
 
 const PatchBody = z.object({
@@ -146,6 +182,10 @@ const PatchBody = z.object({
   available: z.boolean().optional(),
   price: z.number().optional(),
   closed: z.boolean().optional(),
+  address: z.string().optional(),
+  city: z.string().optional(),
+  lat: z.number().optional().nullable(),
+  lng: z.number().optional().nullable(),
 });
 
 export async function PATCH(req: NextRequest) {
@@ -154,102 +194,67 @@ export async function PATCH(req: NextRequest) {
 
   const adminUser = await isAdmin(session.uid);
   if (!adminUser && !(await isApprovedAcademy(session.uid))) {
-    return fail('forbidden', 'Your academy must be approved by PlayNex Admin before editing grounds.', 403);
+    return fail(
+      'forbidden',
+      'Your academy must be approved by PlayNex Admin before editing grounds.',
+      403
+    );
   }
 
   try {
     const parsed = PatchBody.safeParse(await req.json());
     if (!parsed.success) return fail('invalid', 'Invalid input payload', 400);
-    const { facilityId, slot, available, price, closed } = parsed.data;
+    const { facilityId, slot, available, price, closed, address, city, lat, lng } = parsed.data;
 
     const facRef = adminDb.collection('facilities').doc(facilityId);
     const facSnap = await facRef.get();
     if (!facSnap.exists) return fail('not_found', 'Facility not found', 404);
-    if (facSnap.data().academyId !== session.uid) return fail('forbidden', 'Unauthorized to modify this facility', 403);
+    const ownedIds = await getUserOwnedAcademyIds(session.uid);
+    if (!adminUser && !ownedIds.has(facSnap.data()?.academyId)) {
+      return fail('forbidden', 'Unauthorized to modify this facility', 403);
+    }
 
-    const updates: any = {};
+    const updates: any = { updatedAt: Date.now() };
     if (slot !== undefined && available !== undefined) updates[`slots.${slot}`] = available;
     if (price !== undefined) updates.price = price;
     if (closed !== undefined) updates.closed = closed;
+    if (address !== undefined) updates.address = address;
+    if (city !== undefined) updates.city = city;
+    if (lat !== undefined && lng !== undefined && lat !== null && lng !== null) {
+      if (!isValidCoordinates(lat, lng)) {
+        return fail('invalid', 'Invalid latitude/longitude coordinates', 400);
+      }
+      updates.location = { lat, lng };
+    }
 
     await facRef.update(updates);
     return ok({ success: true });
-  } catch (e: any) { return fail('server_error', e.message, 500); }
+  } catch (e: any) {
+    return fail('server_error', e.message, 500);
+  }
 }
 
 export async function DELETE(req: NextRequest) {
   const session = await verifySession();
   if (!session) return fail('unauthorized', 'Login required', 401);
+
+  const { searchParams } = new URL(req.url);
+  const facilityId = searchParams.get('facilityId');
+  if (!facilityId) return fail('invalid', 'Missing facilityId', 400);
+
   try {
-    const { searchParams } = new URL(req.url);
-    const facilityId = searchParams.get('facilityId');
-    if (!facilityId) return fail('invalid', 'Missing facilityId', 400);
-
-    const facRef = adminDb.collection('facilities').doc(facilityId);
-    const facSnap = await facRef.get();
-    if (!facSnap.exists) return fail('not_found', 'Facility not found', 404);
-
-    const facData = facSnap.data();
     const canDelete = await isAcademyOrAdmin(session.uid);
+    if (!canDelete) {
+      return fail('forbidden', 'Academy operator or admin permissions required', 403);
+    }
+
     const adminUser = await isAdmin(session.uid);
-    if (!canDelete || (facData.academyId !== session.uid && !adminUser)) {
-      return fail('forbidden', 'Unauthorized to delete this facility', 403);
+    const result = await deleteFacilityCascade(facilityId, session.uid, adminUser);
+    if (result.status !== 200) {
+      return fail(result.status === 404 ? 'not_found' : 'forbidden', result.error || 'Failed to delete facility', result.status);
     }
 
-    // Safely check and cancel any active/future bookings for this facility
-    const bookingsSnap = await adminDb.collection('bookings')
-      .where('facilityId', '==', facilityId)
-      .where('status', '==', 'confirmed')
-      .get();
-
-    const affectedUserIds = new Set<string>();
-    if (!bookingsSnap.empty) {
-      const batch = adminDb.batch();
-      bookingsSnap.docs.forEach((bDoc: any) => {
-        batch.update(bDoc.ref, {
-          status: 'cancelled',
-          cancellationReason: 'Ground removed by academy management',
-          cancelledAt: Date.now(),
-        });
-        const uid = bDoc.data().userId;
-        if (uid) affectedUserIds.add(uid);
-      });
-      await batch.commit();
-
-      // Notify affected players
-      for (const uid of Array.from(affectedUserIds)) {
-        await dispatchNotification({
-          title: 'Turf Booking Cancelled',
-          message: `Your booking at ${facData.name} has been cancelled because the venue was removed. Any charges will be processed for refund.`,
-          category: 'academy',
-          targetRole: 'player',
-          targetUserId: uid,
-          link: '/player',
-          senderName: facData.academyName || 'PlayNex Academy',
-          idempotencyKey: `notif_fac_del_${facilityId}_${uid}_${Date.now()}`,
-        });
-      }
-    }
-
-    // Delete the facility document
-    await facRef.delete();
-
-    // Log activity
-    await logActivity({
-      userId: session.uid,
-      userName: facData.academyName || 'Academy',
-      action: 'facility_deleted',
-      entityType: 'booking',
-      entityId: facilityId,
-      details: `Removed venue "${facData.name}" (${facData.sport}) and cancelled ${bookingsSnap.size} active booking(s)`,
-    });
-
-    return ok({
-      success: true,
-      facilityId,
-      bookingsCancelled: bookingsSnap.size,
-      playersNotified: affectedUserIds.size
-    });
+    return ok(result.data);
   } catch (e: any) {
     console.error('Failed to delete facility:', e);
     return fail('server_error', e.message || 'Failed to delete facility', 500);

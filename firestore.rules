@@ -33,117 +33,281 @@ service cloud.firestore {
       return getUserRole('staff') || isAcademy() || isAdmin();
     }
 
-    // ── 1. Users ─────────────────────────────────────────────────────────
+    function isAcademyOwner(academyId) {
+      return isAuthenticated() && (
+        academyId == request.auth.uid ||
+        (exists(/databases/$(database)/documents/academies/$(academyId)) &&
+         get(/databases/$(database)/documents/academies/$(academyId)).data.ownerUserId == request.auth.uid)
+      );
+    }
+
+    function isStoreOwner(storeId) {
+      return isAuthenticated() && (
+        storeId == request.auth.uid ||
+        (exists(/databases/$(database)/documents/stores/$(storeId)) &&
+         get(/databases/$(database)/documents/stores/$(storeId)).data.ownerUserId == request.auth.uid)
+      );
+    }
+
+    // ── 1. Users (Owner & Admin Read Only; Protected Fields Server-Only) ─
     match /users/{userId} {
-      allow read: if isAuthenticated();
-      allow write: if isOwner(userId) || isAdmin();
+      allow read: if isOwner(userId) || isAdmin();
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || (
+        isOwner(userId) &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'uid',
+          'email',
+          'accountStatus',
+          'suspensionReason',
+          'suspendedAt',
+          'suspendedBy',
+          'reactivatedAt',
+          'reactivatedBy',
+          'createdAt'
+        ])
+      );
     }
 
-    // ── 2. User Roles (no self-promotion to admin) ───────────────────────
+    // ── 2. User Roles (Owner/Admin Read; Server-Side Writes Only) ────────
     match /userRoles/{roleDocId} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin();
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow write: if false; // Managed via Admin SDK API routes only
     }
 
-    // ── 3. Player Profiles ───────────────────────────────────────────────
+    // ── 3. Player Profiles (Owner & Admin Read; Verification Server-Only) ─
     match /playerProfiles/{userId} {
-      allow read: if isAuthenticated();
-      allow write: if isOwner(userId) || isAdmin();
+      allow read: if isOwner(userId) || isAdmin();
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || (
+        isOwner(userId) &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'userId',
+          'verificationStatus',
+          'verificationStartedAt',
+          'verificationDeadline',
+          'verifiedAt',
+          'verifiedBy',
+          'suspendedAt',
+          'createdAt'
+        ])
+      );
     }
 
-    // ── 4. Academies ─────────────────────────────────────────────────────
+    // ── 4. Academies (No Self-Approval) ──────────────────────────────────
     match /academies/{academyId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update: if isAuthenticated() && (resource.data.ownerUserId == request.auth.uid || isAdmin());
+      allow create: if isAdmin() || (
+        isAuthenticated() &&
+        academyId == request.auth.uid &&
+        request.resource.data.ownerUserId == request.auth.uid &&
+        request.resource.data.verificationStatus == 'pending'
+      );
+      allow update: if isAdmin() || (
+        isAuthenticated() &&
+        resource.data.ownerUserId == request.auth.uid &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'academyId',
+          'ownerUserId',
+          'verificationStatus',
+          'reviewedAt',
+          'reviewedBy',
+          'dismissedAt',
+          'dismissedBy'
+        ])
+      );
       allow delete: if isAdmin();
     }
 
-    // ── 5. Stores ────────────────────────────────────────────────────────
+    // ── 5. Stores (No Self-Approval) ─────────────────────────────────────
     match /stores/{storeId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update: if isAuthenticated() && (resource.data.ownerUserId == request.auth.uid || isAdmin());
+      allow create: if isAdmin() || (
+        isAuthenticated() &&
+        storeId == request.auth.uid &&
+        request.resource.data.ownerUserId == request.auth.uid &&
+        request.resource.data.verificationStatus == 'pending'
+      );
+      allow update: if isAdmin() || (
+        isAuthenticated() &&
+        resource.data.ownerUserId == request.auth.uid &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'storeId',
+          'ownerUserId',
+          'verificationStatus',
+          'reviewedAt',
+          'reviewedBy',
+          'dismissedAt',
+          'dismissedBy'
+        ])
+      );
       allow delete: if isAdmin();
     }
 
-    // ── 6. Staff Profiles ────────────────────────────────────────────────
+    // ── 6. Staff Profiles (Scoped to Owning Academy / Matching Staff) ────
     match /staffProfiles/{staffId} {
-      allow read: if isStaff();
-      allow create: if isAcademy();
-      allow update, delete: if isAcademy() || isAdmin();
+      allow read: if isAdmin() ||
+        isAcademyOwner(resource.data.academyId) ||
+        (isAuthenticated() && resource.data.email == request.auth.token.email);
+      allow create: if isAdmin() || (isAcademy() && isAcademyOwner(request.resource.data.academyId));
+      allow update: if isAdmin() || (
+        isAcademy() &&
+        isAcademyOwner(resource.data.academyId) &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['academyId'])
+      );
+      allow delete: if isAdmin() || (isAcademy() && isAcademyOwner(resource.data.academyId));
     }
 
-    // ── 7. Facilities / Grounds ──────────────────────────────────────────
+    // ── 7. Facilities / Grounds (Strict Academy Ownership) ───────────────
     match /facilities/{facilityId} {
       allow read: if isAuthenticated();
-      allow create: if isAcademy();
-      allow update, delete: if isAcademy() || isAdmin();
+      allow create: if isAdmin() || (isAcademy() && isAcademyOwner(request.resource.data.academyId));
+      allow update: if isAdmin() || (
+        isAcademy() &&
+        isAcademyOwner(resource.data.academyId) &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['academyId', 'academyVerification'])
+      );
+      allow delete: if isAdmin() || (isAcademy() && isAcademyOwner(resource.data.academyId));
     }
 
-    // ── 8. Events / Tournaments ──────────────────────────────────────────
+    // ── 8. Events / Tournaments (Published Read Only; Drafts Owner/Admin) ─
     match /events/{eventId} {
-      allow read: if isAuthenticated();
-      allow create: if isAcademy() || isAdmin();
-      allow update, delete: if isAdmin() || (isAcademy() && resource.data.academyId == request.auth.uid);
+      allow read: if isAuthenticated() && (
+        resource.data.status != 'Draft' ||
+        isAdmin() ||
+        (isAcademy() && isAcademyOwner(resource.data.academyId))
+      );
+      allow create: if isAdmin() || (isAcademy() && isAcademyOwner(request.resource.data.academyId));
+      allow update: if isAdmin() || (
+        isAcademy() &&
+        isAcademyOwner(resource.data.academyId) &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['academyId', 'academyVerification', 'organizerType'])
+      );
+      allow delete: if isAdmin() || (isAcademy() && isAcademyOwner(resource.data.academyId));
     }
 
-    // ── 9. Tournament Registrations ──────────────────────────────────────
+    // ── 9. Tournament Registrations (Server-Side Capacity/Deadline Only) ─
     match /registrations/{registrationId} {
       allow read: if isAuthenticated() && (
         resource.data.userId == request.auth.uid ||
         isAdmin() ||
-        isAcademy()
+        (isAcademy() &&
+         exists(/databases/$(database)/documents/events/$(resource.data.eventId)) &&
+         isAcademyOwner(get(/databases/$(database)/documents/events/$(resource.data.eventId)).data.academyId))
       );
-      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      allow update, delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow write: if false; // Server-side transactional registration & validation only
     }
 
-    // ── 10. Bookings ─────────────────────────────────────────────────────
+    // ── 10. Bookings & Concurrency Slot Locks ────────────────────────────
     match /bookings/{bookingId} {
-      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAcademy() || isAdmin());
-      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      allow update, delete: if isAdmin() || isAcademy();
-    }
-
-    // ── 11. Games / Matches ──────────────────────────────────────────────
-    match /games/{gameId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update: if isAuthenticated() && (resource.data.creatorId == request.auth.uid || isAdmin());
-      allow delete: if isAuthenticated() && (resource.data.creatorId == request.auth.uid || isAdmin());
-    }
-
-    // ── 12. Products ─────────────────────────────────────────────────────
-    match /products/{productId} {
-      allow read: if isAuthenticated();
-      allow create, update, delete: if isStore() || isAdmin();
-    }
-
-    // ── 13. Orders ───────────────────────────────────────────────────────
-    match /orders/{orderId} {
-      allow read: if isAuthenticated() && (resource.data.playerId == request.auth.uid || isStore() || isAdmin());
-      allow create: if isAuthenticated() && request.resource.data.playerId == request.auth.uid;
-      allow update: if isStore() || isAdmin();
-      allow delete: if isAdmin();
-    }
-
-    // ── 14. Ratings ──────────────────────────────────────────────────────
-    match /ratings/{ratingId} {
-      allow read: if isAuthenticated();
-      allow create, update: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      allow delete: if isAdmin();
-    }
-
-    // ── 15. Notifications ────────────────────────────────────────────────
-    match /notifications/{notificationId} {
-      // Users can read their own notifications; admins can read all
       allow read: if isAuthenticated() && (
-        resource.data.recipientId == request.auth.uid ||
+        resource.data.userId == request.auth.uid ||
+        isAcademyOwner(resource.data.academyId) ||
         isAdmin()
       );
-      // Only server-side (admin SDK) or admin users write notifications
+      allow write: if false; // Server-side transactional booking & QR check-in only
+    }
+
+    match /bookingSlots/{slotId} {
+      allow read: if isAdmin(); // Clients query sanitized slot hours via /api/bookings
+      allow write: if false;
+    }
+
+    // ── 11. Games & Matchmaking ──────────────────────────────────────────
+    match /games/{gameId} {
+      allow read: if isAuthenticated();
       allow write: if isAdmin();
+    }
+
+    match /matches/{matchId} {
+      allow read: if isAuthenticated();
+      allow write: if false; // Server-side transactional matchmaking only
+    }
+
+    match /matchRequests/{reqId} {
+      allow read: if isAuthenticated() && (
+        resource.data.fromUserId == request.auth.uid ||
+        resource.data.toUserId == request.auth.uid ||
+        isAdmin()
+      );
+      allow write: if false;
+    }
+
+    // ── 12. Matchmaking Chats & Safety Controls ──────────────────────────
+    match /chats/{chatId} {
+      allow read: if isAuthenticated() && (
+        request.auth.uid in resource.data.participants ||
+        isAdmin()
+      );
+      allow write: if false;
+
+      match /messages/{messageId} {
+        allow read: if isAuthenticated() && (
+          request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants ||
+          isAdmin()
+        );
+        allow write: if false;
+      }
+    }
+
+    match /userBlocks/{blockId} {
+      allow read: if isAuthenticated() && (
+        resource.data.blockerId == request.auth.uid ||
+        isAdmin()
+      );
+      allow write: if false;
+    }
+
+    match /userReports/{reportId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.reporterId == request.auth.uid);
+      allow write: if false;
+    }
+
+    // ── 13. Products, Orders & Rentals (Strict Store Ownership) ──────────
+    match /products/{productId} {
+      allow read: if isAuthenticated();
+      allow create: if isAdmin() || (isStore() && isStoreOwner(request.resource.data.storeId));
+      allow update: if isAdmin() || (
+        isStore() &&
+        isStoreOwner(resource.data.storeId) &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['storeId', 'storeVerification'])
+      );
+      allow delete: if isAdmin() || (isStore() && isStoreOwner(resource.data.storeId));
+    }
+
+    match /orders/{orderId} {
+      allow read: if isAuthenticated() && (
+        resource.data.playerId == request.auth.uid ||
+        isStoreOwner(resource.data.storeId) ||
+        isAdmin()
+      );
+      allow write: if false; // Server-side atomic order & stock management
+    }
+
+    match /rentals/{rentalId} {
+      allow read: if isAuthenticated() && (
+        resource.data.playerId == request.auth.uid ||
+        isStoreOwner(resource.data.storeId) ||
+        isAdmin()
+      );
+      allow write: if false; // Server-side atomic overlap & deposit management
+    }
+
+    // ── 14. Ratings (Server-Side Transactional Rating Only) ──────────────
+    match /ratings/{ratingId} {
+      allow read: if isAuthenticated();
+      allow write: if false; // Server API (/api/ratings) maintains atomic averages
+    }
+
+    // ── 15. Notifications (Strict Individual Isolation) ──────────────────
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated() && (
+        resource.data.recipientId == request.auth.uid ||
+        resource.data.targetUserId == request.auth.uid ||
+        (resource.data.recipientId == null && resource.data.targetUserId == null && resource.data.targetRole != 'admin') ||
+        isAdmin()
+      );
+      allow write: if false; // Server-side Admin SDK dispatch only
     }
 
     // ── 16. Notification Reads ───────────────────────────────────────────
@@ -151,22 +315,36 @@ service cloud.firestore {
       allow read, write: if isAuthenticated() && readDocId.matches('.*_' + request.auth.uid);
     }
 
-    // ── 17. Activity Logs ────────────────────────────────────────────────
+    // ── 17. Activity Logs (Server-Side Audit Trail Only) ─────────────────
     match /activityLogs/{logId} {
       allow read: if isAdmin();
-      allow create: if isAuthenticated();
-      allow update, delete: if isAdmin();
+      allow write: if false; // Written exclusively via Admin SDK
     }
 
-    // ── 18. Player Verifications ─────────────────────────────────────────
+    // ── 18. Player Verifications & Private Document Vault ────────────────
     match /playerVerifications/{verificationId} {
       allow read: if isAuthenticated() && (
         resource.data.userId == request.auth.uid ||
         isAdmin()
       );
-      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      allow update: if isAdmin();
-      allow delete: if isAdmin();
+      allow write: if false; // Server-side validation & audit trail only
+    }
+
+    match /privateVerificationDocs/{docId} {
+      // Strictly inaccessible from client SDKs; served only via authorized server API
+      allow read, write: if false;
+    }
+
+    match /accountDeletionRequests/{reqId} {
+      allow read: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid ||
+        isAdmin()
+      );
+      allow write: if false;
+    }
+
+    match /aiRateLimits/{uid} {
+      allow read, write: if false;
     }
   }
 }

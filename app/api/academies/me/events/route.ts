@@ -6,6 +6,7 @@ import { isAdmin } from '@/lib/auth/admin';
 import { ok, fail } from '@/lib/api/response';
 import { logActivity } from '@/lib/firebase/activity';
 import { dispatchNotification } from '@/lib/notifications/dispatch';
+import { findUserAcademyDoc, getUserOwnedAcademyIds } from '@/lib/academies/resolve';
 
 // Request body validation schema for creating an event
 const Body = z.object({
@@ -54,9 +55,8 @@ async function isApprovedAcademy(uid: string): Promise<boolean> {
 
   if (roleSnap.empty) return false;
 
-  const academyDoc = await adminDb.collection('academies').doc(uid).get();
-  return academyDoc.exists &&
-    academyDoc.data()?.verificationStatus === 'approved';
+  const academyDoc = await findUserAcademyDoc(uid);
+  return Boolean(academyDoc && academyDoc.data()?.verificationStatus === 'approved');
 }
 
 /** GET – list events owned by the academy of the logged‑in user */
@@ -64,9 +64,10 @@ export async function GET() {
   const session = await verifySession();
   if (!session) return fail('unauthorized', 'Login required', 401);
   try {
+    const ownedIds = Array.from(await getUserOwnedAcademyIds(session.uid)).slice(0, 30);
     const snap = await adminDb
       .collection('events')
-      .where('academyId', '==', session.uid)
+      .where('academyId', 'in', ownedIds)
       .get();
     const data = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
     data.sort((a: any, b: any) => (b.createdAt || 0) - (a.createdAt || 0));
@@ -94,16 +95,17 @@ export async function POST(req: NextRequest) {
     const d = parsed.data;
 
     // Resolve academy information
-    const academyDoc = await adminDb.collection('academies').doc(session.uid).get();
-    const academyName = academyDoc.exists ? academyDoc.data()?.academyName : 'Sports Academy';
-    const academyVerification = academyDoc.exists ? academyDoc.data()?.verificationStatus : 'pending';
+    const academyDoc = await findUserAcademyDoc(session.uid);
+    const resolvedAcademyId = academyDoc?.id || session.uid;
+    const academyName = academyDoc ? academyDoc.data()?.academyName : 'Sports Academy';
+    const academyVerification = academyDoc ? academyDoc.data()?.verificationStatus : 'pending';
 
     const venue = d.venue || d.loc || 'Main Arena';
     const entryFee = d.entryFee !== undefined ? d.entryFee : d.price || 0;
     const deadline = d.registrationDeadline || d.date;
 
     const eventData = {
-      academyId: session.uid,
+      academyId: resolvedAcademyId,
       academyName,
       academyVerification,
       name: d.name,
@@ -175,9 +177,10 @@ export async function DELETE(req: NextRequest) {
     const doc = await docRef.get();
     if (!doc.exists) return fail('not_found', 'Event not found', 404);
 
-    const existing = doc.data();
+    const existing = doc.data()!;
+    const ownedIds = await getUserOwnedAcademyIds(session.uid);
     // Ensure the caller owns the event or is an admin
-    if (existing.academyId !== session.uid && !(await isAdmin(session.uid))) {
+    if (!ownedIds.has(existing.academyId) && !(await isAdmin(session.uid))) {
       return fail('forbidden', 'Not authorized to delete this event', 403);
     }
 

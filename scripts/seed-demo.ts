@@ -1,4 +1,4 @@
-import { adminDb } from '../lib/firebase/admin';
+import { adminDb } from '../lib/firebase/admin-core';
 
 async function main() {
   const now = Date.now();

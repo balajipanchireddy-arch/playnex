@@ -2,9 +2,13 @@ import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { adminDb } from '@/lib/firebase/admin';
 import { verifySession } from '@/lib/auth/session';
+import { isAdmin as checkAdminAccess } from '@/lib/auth/admin';
 import { ok, fail } from '@/lib/api/response';
 import { logActivity } from '@/lib/firebase/activity';
 import { dispatchNotification } from '@/lib/notifications/dispatch';
+import { getUserOwnedAcademyIds } from '@/lib/academies/resolve';
+
+const PUBLIC_TOURNAMENT_STATUSES = new Set(['Registration Open', 'Upcoming', 'Ongoing']);
 
 const UpdateTournamentSchema = z.object({
   name: z.string().min(2).optional(),
@@ -40,9 +44,67 @@ async function getUserRoles(uid: string) {
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   try {
+    const session = await verifySession();
+    const [callerIsAdmin, ownedAcademyIds] = session
+      ? await Promise.all([checkAdminAccess(session.uid), getUserOwnedAcademyIds(session.uid)])
+      : [false, new Set<string>()];
+
     const doc = await adminDb.collection('events').doc(params.id).get();
     if (!doc.exists) return fail('not_found', 'Tournament not found', 404);
-    return ok({ id: doc.id, ...doc.data() });
+
+    const ev = doc.data()!;
+    const isOwner = Boolean(session && ownedAcademyIds.has(ev.academyId));
+
+    if (!callerIsAdmin && !isOwner) {
+      if (ev.status === 'Draft') {
+        return fail('not_found', 'Tournament not found', 404);
+      }
+
+      let isApprovedSource = ev.organizerType === 'admin' || ev.academyVerification === 'approved';
+      if (!isApprovedSource && ev.academyId) {
+        const acadDoc = await adminDb.collection('academies').doc(ev.academyId).get();
+        isApprovedSource = acadDoc.exists && acadDoc.data()?.verificationStatus === 'approved';
+      }
+      if (!isApprovedSource) {
+        return fail('not_found', 'Tournament not found', 404);
+      }
+      if (!session && !PUBLIC_TOURNAMENT_STATUSES.has(ev.status || 'Upcoming')) {
+        return fail('unauthorized', 'Login required', 401);
+      }
+    }
+
+    const safeBase = {
+      id: doc.id,
+      name: ev.name || 'Tournament',
+      sport: ev.sport || 'Sport',
+      category: ev.category || 'Open Championship',
+      participationType: ev.participationType || 'individual',
+      description: ev.description || '',
+      venue: ev.venue || ev.loc || '',
+      loc: ev.loc || ev.venue || '',
+      date: ev.date || '',
+      registrationDeadline: ev.registrationDeadline || '',
+      maxParticipants: ev.maxParticipants ?? 0,
+      registeredCount: ev.registeredCount ?? 0,
+      entryFee: ev.entryFee ?? ev.price ?? 0,
+      price: ev.price ?? ev.entryFee ?? 0,
+      rules: ev.rules || '',
+      posterUrl: ev.posterUrl || '',
+      status: ev.status || 'Upcoming',
+      academyName: ev.academyName || 'PlayNex',
+      createdAt: ev.createdAt || 0,
+    };
+
+    if (!session) {
+      return ok(safeBase);
+    }
+
+    return ok({
+      ...safeBase,
+      academyId: ev.academyId || null,
+      academyVerification: ev.academyVerification || null,
+      organizerType: ev.organizerType || null,
+    });
   } catch (e: any) {
     return fail('server_error', e.message, 500);
   }
@@ -52,16 +114,16 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const session = await verifySession();
   if (!session) return fail('unauthorized', 'Login required', 401);
 
-  const roles = await getUserRoles(session.uid);
-  const isAdmin = roles.includes('admin');
+  const isAdmin = await checkAdminAccess(session.uid);
 
   try {
     const docRef = adminDb.collection('events').doc(params.id);
     const doc = await docRef.get();
     if (!doc.exists) return fail('not_found', 'Tournament not found', 404);
 
-    const existing = doc.data();
-    if (!isAdmin && existing.academyId !== session.uid) {
+    const existing = doc.data()!;
+    const ownedAcademyIds = await getUserOwnedAcademyIds(session.uid);
+    if (!isAdmin && !ownedAcademyIds.has(existing.academyId)) {
       return fail('forbidden', 'You can only edit tournaments you created', 403);
     }
 
@@ -186,16 +248,16 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
 
   if (!params.id) return fail('invalid', 'Tournament ID is required', 400);
 
-  const roles = await getUserRoles(session.uid);
-  const isAdmin = roles.includes('admin');
+  const isAdmin = await checkAdminAccess(session.uid);
 
   try {
     const docRef = adminDb.collection('events').doc(params.id);
     const doc = await docRef.get();
     if (!doc.exists) return fail('not_found', 'Tournament not found', 404);
 
-    const existing = doc.data();
-    if (!isAdmin && existing.academyId !== session.uid) {
+    const existing = doc.data()!;
+    const ownedAcademyIds = await getUserOwnedAcademyIds(session.uid);
+    if (!isAdmin && !ownedAcademyIds.has(existing.academyId)) {
       return fail('forbidden', 'Administrator permissions or tournament ownership required', 403);
     }
 

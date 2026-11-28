@@ -10,6 +10,7 @@ import {
   isSuperAdmin as isConfiguredSuperAdmin,
   ensureSuperAdminAccount,
 } from '@/lib/auth/admin';
+import { checkAndEnforcePlayerVerification } from '@/lib/verification/player';
 import { ok, fail } from '@/lib/api/response';
 
 const Body = z.object({ idToken: z.string().min(10) });
@@ -20,7 +21,7 @@ export async function POST(req: NextRequest) {
     if (!parsed.success) return fail('invalid', 'Invalid input', 400);
 
     const decoded = await adminAuth.verifyIdToken(parsed.data.idToken);
-    const isSuperAdmin = await isConfiguredSuperAdmin(decoded.uid);
+    const isSuperAdmin = await isConfiguredSuperAdmin(decoded.uid, decoded.email);
 
     if (isSuperAdmin) {
       const user = await ensureSuperAdminAccount(
@@ -48,7 +49,6 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Normal user path
     const userDoc = await adminDb.collection('users').doc(decoded.uid).get();
     if (!userDoc.exists) {
       return fail('not_found', 'No account found. Please register first.', 404);
@@ -56,24 +56,45 @@ export async function POST(req: NextRequest) {
 
     const user = userDoc.data()!;
 
-    if (user.accountStatus === 'suspended') {
+    // Block manually suspended accounts unless suspended solely due to expired 5-day verification
+    // (verification_expired players are allowed to sign in to submit proof for restoration).
+    if (
+      user.accountStatus === 'suspended' &&
+      user.suspensionReason &&
+      user.suspensionReason !== 'verification_expired'
+    ) {
       return fail('suspended', 'Account suspended. Contact support.', 403);
     }
 
     const rolesSnap = await adminDb
       .collection('userRoles')
       .where('userId', '==', decoded.uid)
-      .where('status', '==', 'active')
       .get();
 
-    const roles = rolesSnap.docs.map((d: any) => d.data().roleId);
+    const activeRoles = rolesSnap.docs
+      .filter((d: any) => d.data().status === 'active')
+      .map((d: any) => d.data().roleId as string);
+    const suspendedVerificationRoles = rolesSnap.docs
+      .filter(
+        (d: any) =>
+          d.data().status === 'suspended' &&
+          d.data().suspensionReason === 'verification_expired'
+      )
+      .map((d: any) => d.data().roleId as string);
+
+    const roles = Array.from(new Set([...activeRoles, ...suspendedVerificationRoles]));
 
     if (!roles.length) {
       return fail('no_roles', 'No roles assigned to this account. Contact an administrator.', 403);
     }
 
+    let verificationState = null;
+    if (roles.includes('player')) {
+      verificationState = await checkAndEnforcePlayerVerification(decoded.uid);
+    }
+
     await setSessionCookie(parsed.data.idToken);
-    return ok({ user, roles });
+    return ok({ user, roles, verificationState });
   } catch (e: any) {
     console.error('session POST error', e);
     return fail('server_error', e?.message ?? 'Sign in failed', 500);
@@ -84,7 +105,7 @@ export async function GET() {
   const decoded = await verifySession();
   if (!decoded) return fail('unauthorized', 'Not signed in', 401);
 
-  const isSuperAdmin = await isConfiguredSuperAdmin(decoded.uid);
+  const isSuperAdmin = await isConfiguredSuperAdmin(decoded.uid, decoded.email);
 
   if (isSuperAdmin) {
     const user = await ensureSuperAdminAccount(
@@ -110,12 +131,27 @@ export async function GET() {
   const rolesSnap = await adminDb
     .collection('userRoles')
     .where('userId', '==', decoded.uid)
-    .where('status', '==', 'active')
     .get();
 
-  const roles = rolesSnap.docs.map((d: any) => d.data().roleId);
+  const roles = Array.from(
+    new Set(
+      rolesSnap.docs
+        .filter(
+          (d: any) =>
+            d.data().status === 'active' ||
+            (d.data().status === 'suspended' &&
+              d.data().suspensionReason === 'verification_expired')
+        )
+        .map((d: any) => d.data().roleId as string)
+    )
+  );
 
-  return ok({ user: userDoc.data(), roles });
+  let verificationState = null;
+  if (roles.includes('player') && !roles.includes('admin')) {
+    verificationState = await checkAndEnforcePlayerVerification(decoded.uid);
+  }
+
+  return ok({ user: userDoc.data(), roles, verificationState });
 }
 
 export async function DELETE() {

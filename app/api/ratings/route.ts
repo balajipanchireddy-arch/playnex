@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { adminDb } from '@/lib/firebase/admin';
 import { verifySession } from '@/lib/auth/session';
 import { ok, fail } from '@/lib/api/response';
+import { checkAndEnforcePlayerVerification } from '@/lib/verification/player';
 
 const Body = z.object({
   targetId: z.string().min(1),
@@ -13,6 +14,15 @@ const Body = z.object({
 export async function POST(req: NextRequest) {
   const session = await verifySession();
   if (!session) return fail('unauthorized', 'Login required', 401);
+
+  const verif = await checkAndEnforcePlayerVerification(session.uid);
+  if (!verif.canAccessRestrictedFeatures) {
+    return fail(
+      'account_suspended',
+      'Your account is suspended due to expired 5-day verification. Submit proof to submit ratings.',
+      403
+    );
+  }
 
   try {
     const parsed = Body.safeParse(await req.json());

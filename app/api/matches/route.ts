@@ -5,13 +5,7 @@ import { verifySession } from '@/lib/auth/session';
 import { ok, fail } from '@/lib/api/response';
 import { logActivity } from '@/lib/firebase/activity';
 import { dispatchNotification } from '@/lib/notifications/dispatch';
-
-/**
- * Matchmaking API
- *
- * GET  /api/matches         — Discover matches (?sport=...&status=...&mine=true)
- * POST /api/matches         — Create a new match request (Method B or Method C)
- */
+import { checkAndEnforcePlayerVerification } from '@/lib/verification/player';
 
 const CreateMatchSchema = z.object({
   sport: z.string().min(2),
@@ -37,12 +31,15 @@ export async function GET(req: NextRequest) {
   const mine = searchParams.get('mine') === 'true';
 
   try {
-    const snap = await adminDb.collection('matches').get();
+    const [snap, blocksSnap] = await Promise.all([
+      adminDb.collection('matches').get(),
+      adminDb.collection('userBlocks').where('blockerId', '==', session.uid).get(),
+    ]);
+    const blockedIds = new Set(blocksSnap.docs.map((d: any) => d.data()?.blockedId));
     const now = Date.now();
 
     let matches = snap.docs.map((d: any) => {
       const data = d.data();
-      // Compute live expiration without destructive writes on read
       const effectiveStatus =
         (data.status === 'open' || data.status === 'full') &&
         data.expiresAt &&
@@ -62,9 +59,13 @@ export async function GET(req: NextRequest) {
             m.pendingRequests.some((r: any) => r.userId === session.uid))
       );
     } else if (status) {
-      matches = matches.filter((m: any) => m.status === status);
+      matches = matches.filter((m: any) => m.status === status && !blockedIds.has(m.creatorId));
     } else {
-      matches = matches.filter((m: any) => m.status === 'open' || m.status === 'full' || m.status === 'ready');
+      matches = matches.filter(
+        (m: any) =>
+          (m.status === 'open' || m.status === 'full' || m.status === 'ready') &&
+          !blockedIds.has(m.creatorId)
+      );
     }
 
     if (sport && sport !== 'All') {
@@ -83,6 +84,15 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const session = await verifySession();
   if (!session) return fail('unauthorized', 'Login required', 401);
+
+  const verification = await checkAndEnforcePlayerVerification(session.uid);
+  if (!verification.canAccessRestrictedFeatures) {
+    return fail(
+      'account_suspended',
+      'Your account is suspended because the 5-day player verification deadline expired. Submit verification proof to restore match creation.',
+      403
+    );
+  }
 
   try {
     const parsed = CreateMatchSchema.safeParse(await req.json());
@@ -108,7 +118,6 @@ export async function POST(req: NextRequest) {
       return fail('invalid', 'Match date and time must be in the future', 400);
     }
 
-    // Fetch creator display name
     const userDoc = await adminDb.collection('users').doc(session.uid).get();
     const creatorName = userDoc.exists
       ? userDoc.data()?.fullName || session.email || 'Player'
@@ -129,9 +138,7 @@ export async function POST(req: NextRequest) {
       creatorName,
       creatorEmail: session.email || '',
       participants: [session.uid],
-      participantDetails: [
-        { uid: session.uid, name: creatorName, joinedAt: now },
-      ],
+      participantDetails: [{ uid: session.uid, name: creatorName, joinedAt: now }],
       pendingRequests: [],
       waitlist: [],
       participantCount: 1,
@@ -169,4 +176,3 @@ export async function POST(req: NextRequest) {
     return fail('server_error', e.message || 'Failed to create match', 500);
   }
 }
-

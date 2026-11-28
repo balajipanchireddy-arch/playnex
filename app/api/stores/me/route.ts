@@ -6,6 +6,7 @@ import { isAdmin } from '@/lib/auth/admin';
 import { ok, fail } from '@/lib/api/response';
 import { logActivity } from '@/lib/firebase/activity';
 import { findUserStoreDoc } from '@/lib/stores/resolve';
+import { deleteStoreCascade } from '@/lib/services/deletion';
 
 export async function GET() {
   const session = await verifySession();
@@ -77,8 +78,6 @@ export async function POST(req: NextRequest) {
     const now = Date.now();
     const { storeName, address, contact, description } = parsed.data;
 
-    // Admins creating a store get an auto-generated doc ID so they can manage multiple stores;
-    // normal partners get doc ID = session.uid to match existing schema conventions.
     const storeRef = adminUser
       ? adminDb.collection('stores').doc()
       : adminDb.collection('stores').doc(session.uid);
@@ -98,7 +97,6 @@ export async function POST(req: NextRequest) {
 
     await storeRef.set(storeData, { merge: true });
 
-    // Grant active 'store' role for non-admin partner registration (never grants admin)
     if (!adminUser) {
       await adminDb.collection('userRoles').doc(`${session.uid}_store`).set(
         {
@@ -127,5 +125,31 @@ export async function POST(req: NextRequest) {
     });
   } catch (e: any) {
     return fail('server_error', e.message || 'Failed to register store', 500);
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  const session = await verifySession();
+  if (!session) return fail('unauthorized', 'Login required', 401);
+
+  const { searchParams } = new URL(req.url);
+  const storeIdParam = searchParams.get('storeId');
+
+  try {
+    const adminUser = await isAdmin(session.uid);
+    const callerStore = await findUserStoreDoc(session.uid);
+    const targetStoreId = adminUser && storeIdParam ? storeIdParam : callerStore?.id || session.uid;
+
+    const result = await deleteStoreCascade(targetStoreId, session.uid, adminUser);
+    if (result.status !== 200) {
+      return fail(
+        result.status === 404 ? 'not_found' : result.status === 409 ? 'conflict' : 'forbidden',
+        result.error || 'Failed to delete store',
+        result.status
+      );
+    }
+    return ok(result.data);
+  } catch (e: any) {
+    return fail('server_error', e.message || 'Failed to delete store', 500);
   }
 }

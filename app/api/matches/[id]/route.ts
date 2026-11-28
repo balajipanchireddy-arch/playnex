@@ -6,23 +6,12 @@ import { isAdmin } from '@/lib/auth/admin';
 import { ok, fail } from '@/lib/api/response';
 import { logActivity } from '@/lib/firebase/activity';
 import { dispatchNotification } from '@/lib/notifications/dispatch';
-
-/**
- * Single Match Operations API
- *
- * PATCH /api/matches/[id] — Atomic actions:
- *   - join_request: Request to join a match (or join waitlist if full)
- *   - accept:       Creator accepts a pending request (atomic capacity check)
- *   - reject:       Creator rejects a pending request
- *   - leave:        Participant leaves the match
- *   - remove:       Creator/Admin removes a participant
- *   - confirm:      Creator marks match as ready / links bookingId
- *   - cancel:       Creator/Admin cancels the match
- */
+import { checkAndEnforcePlayerVerification } from '@/lib/verification/player';
 
 const ActionSchema = z.object({
   action: z.enum([
     'join_request',
+    'withdraw',
     'accept',
     'reject',
     'leave',
@@ -52,6 +41,18 @@ export async function PATCH(
 
   const { action, targetUserId, bookingId, facilityId } = parsed.data;
   const adminUser = await isAdmin(session.uid);
+
+  if (!adminUser && ['join_request', 'accept', 'confirm'].includes(action)) {
+    const verif = await checkAndEnforcePlayerVerification(session.uid);
+    if (!verif.canAccessRestrictedFeatures) {
+      return fail(
+        'account_suspended',
+        'Your account is suspended due to expired 5-day verification. Submit proof to participate in matches.',
+        403
+      );
+    }
+  }
+
   const matchRef = adminDb.collection('matches').doc(matchId);
 
   try {
@@ -68,7 +69,7 @@ export async function PATCH(
       const now = Date.now();
 
       if (m.status === 'cancelled') throw new Error('MATCH_CANCELLED');
-      if (m.expiresAt && now > m.expiresAt && action !== 'cancel') {
+      if (m.expiresAt && now > m.expiresAt && action !== 'cancel' && action !== 'withdraw') {
         throw new Error('MATCH_EXPIRED');
       }
 
@@ -98,6 +99,22 @@ export async function PATCH(
         return { status: m.status, requested: true, match: m };
       }
 
+      if (action === 'withdraw') {
+        const hadPending = pendingRequests.some((r) => r.userId === session.uid);
+        const hadWaitlist = waitlist.some((w) => w.userId === session.uid);
+        if (!hadPending && !hadWaitlist) {
+          throw new Error('NO_PENDING_REQUEST');
+        }
+        const nextPending = pendingRequests.filter((r) => r.userId !== session.uid);
+        const nextWaitlist = waitlist.filter((w) => w.userId !== session.uid);
+        tx.update(matchRef, {
+          pendingRequests: nextPending,
+          waitlist: nextWaitlist,
+          updatedAt: now,
+        });
+        return { status: m.status, withdrawn: true, match: m };
+      }
+
       if (action === 'accept') {
         if (m.creatorId !== session.uid && !adminUser) throw new Error('FORBIDDEN');
         if (!targetUserId) throw new Error('TARGET_REQUIRED');
@@ -121,7 +138,14 @@ export async function PATCH(
           updatedAt: now,
         });
 
-        return { status: nextStatus, acceptedUserId: targetUserId, becameFull: nextStatus === 'full', match: m };
+        return {
+          status: nextStatus,
+          acceptedUserId: targetUserId,
+          becameFull: nextStatus === 'full',
+          updatedParticipants: participants,
+          updatedParticipantDetails: participantDetails,
+          match: m,
+        };
       }
 
       if (action === 'reject') {
@@ -148,7 +172,7 @@ export async function PATCH(
           status: nextStatus,
           updatedAt: now,
         });
-        return { status: nextStatus, left: true, match: m };
+        return { status: nextStatus, left: true, updatedParticipants: nextParticipants, match: m };
       }
 
       if (action === 'remove') {
@@ -166,7 +190,7 @@ export async function PATCH(
           status: nextStatus,
           updatedAt: now,
         });
-        return { status: nextStatus, removedUserId: targetUserId, match: m };
+        return { status: nextStatus, removedUserId: targetUserId, updatedParticipants: nextParticipants, match: m };
       }
 
       if (action === 'confirm') {
@@ -189,14 +213,40 @@ export async function PATCH(
       throw new Error('INVALID_ACTION');
     });
 
-    // Side-effect notifications outside transaction
     const m = result.match;
+
+    // Keep match group chat synced with accepted participants
+    if (action === 'accept' && Array.isArray(result.updatedParticipants)) {
+      const chatRef = adminDb.collection('chats').doc(`match_${matchId}`);
+      await chatRef.set(
+        {
+          type: 'match',
+          matchId,
+          title: `${m.sport} Match · ${m.location}`,
+          participants: result.updatedParticipants,
+          participantNames: Object.fromEntries(
+            (result.updatedParticipantDetails || []).map((p: any) => [p.uid, p.name || 'Player'])
+          ),
+          updatedAt: Date.now(),
+          createdAt: m.createdAt || Date.now(),
+        },
+        { merge: true }
+      );
+    } else if ((action === 'leave' || action === 'remove') && Array.isArray(result.updatedParticipants)) {
+      const chatRef = adminDb.collection('chats').doc(`match_${matchId}`);
+      const chatSnap = await chatRef.get();
+      if (chatSnap.exists) {
+        await chatRef.update({ participants: result.updatedParticipants, updatedAt: Date.now() });
+      }
+    }
+
     if (action === 'join_request' && m?.creatorId) {
       await dispatchNotification({
         title: result.waitlisted ? 'Match Waitlist Request' : 'New Match Join Request',
         message: `${actorName} wants to join your ${m.sport} match at ${m.location}.`,
         category: 'match',
         targetRole: 'player',
+        recipientId: m.creatorId,
         targetUserId: m.creatorId,
         link: '/player',
         senderName: actorName,
@@ -204,20 +254,22 @@ export async function PATCH(
     } else if (action === 'accept' && targetUserId) {
       await dispatchNotification({
         title: 'Match Request Accepted!',
-        message: `You have been accepted into ${m.creatorName}'s ${m.sport} match at ${m.location}.`,
+        message: `You have been accepted into ${m.creatorName}'s ${m.sport} match at ${m.location}. Match chat is now unlocked!`,
         category: 'match',
         targetRole: 'player',
+        recipientId: targetUserId,
         targetUserId,
         link: '/player',
         senderName: m.creatorName || 'PlayNex',
       });
       if (result.becameFull) {
-        for (const uid of m.participants || []) {
+        for (const uid of result.updatedParticipants || m.participants || []) {
           await dispatchNotification({
             title: 'Match is Now Full!',
             message: `Your ${m.sport} match at ${m.location} has reached full capacity and is ready for booking.`,
             category: 'match',
             targetRole: 'player',
+            recipientId: uid,
             targetUserId: uid,
             link: '/player',
           });
@@ -229,6 +281,7 @@ export async function PATCH(
         message: `Your request to join the ${m.sport} match at ${m.location} was declined.`,
         category: 'match',
         targetRole: 'player',
+        recipientId: targetUserId,
         targetUserId,
         link: '/player',
       });
@@ -240,6 +293,7 @@ export async function PATCH(
             message: `The ${m.sport} match at ${m.location} on ${m.date} was cancelled by the organizer.`,
             category: 'match',
             targetRole: 'player',
+            recipientId: uid,
             targetUserId: uid,
             link: '/player',
           });
@@ -266,6 +320,7 @@ export async function PATCH(
       ALREADY_JOINED: ['You are already a participant in this match', 409],
       ALREADY_REQUESTED: ['You have already requested to join this match', 409],
       ALREADY_WAITLISTED: ['You are already on the waitlist', 409],
+      NO_PENDING_REQUEST: ['No pending request found to withdraw', 404],
       MATCH_FULL: ['This match has reached its player capacity', 409],
       NOT_A_PARTICIPANT: ['You are not a participant in this match', 400],
       CREATOR_CANNOT_LEAVE: ['Match creator cannot leave; cancel the match instead', 400],
@@ -275,4 +330,3 @@ export async function PATCH(
     return fail('server_error', e?.message || 'Match action failed', 500);
   }
 }
-

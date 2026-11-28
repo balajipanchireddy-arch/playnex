@@ -1,4 +1,4 @@
-import { adminAuth, adminDb } from '../lib/firebase/admin';
+import { adminAuth, adminDb } from '../lib/firebase/admin-core';
 async function main() {
   const email = process.env.SEED_ADMIN_EMAIL;
   if (!email) throw new Error('Set SEED_ADMIN_EMAIL in .env.local first.');

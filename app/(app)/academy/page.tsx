@@ -1,6 +1,7 @@
 'use client';
 
 import DeleteConfirmModal from '@/components/DeleteConfirmModal';
+import QRScannerModal from '@/components/QRScannerModal';
 import { useState, useEffect } from 'react';
 import { uploadImage } from '@/lib/utils/upload';
 import Toast from '@/components/ui/Toast';
@@ -32,6 +33,8 @@ import {
   Edit3,
   ToggleLeft,
   ToggleRight,
+  QrCode,
+  Navigation,
 } from 'lucide-react';
 
 // ── Staff roles configuration ──────────────────────────────────────────────
@@ -84,12 +87,16 @@ export default function AcademyDashboard() {
   const [staffPhone, setStaffPhone] = useState('');
   const [staffSubmitting, setStaffSubmitting] = useState(false);
   const [checkInQuery, setCheckInQuery] = useState('');
-  const [checkedInIds, setCheckedInIds] = useState<Set<string>>(new Set());
+  const [academyBookings, setAcademyBookings] = useState<any[]>([]);
+  const [showQrScanner, setShowQrScanner] = useState(false);
   const [activeSection, setActiveSection] = useState<'grounds' | 'tournaments' | 'staff' | 'checkin'>('grounds');
 
   // Ground Form State
   const [name, setName] = useState('');
   const [address, setAddress] = useState('');
+  const [city, setCity] = useState('');
+  const [latInput, setLatInput] = useState('');
+  const [lngInput, setLngInput] = useState('');
   const [description, setDescription] = useState('');
   const [contact, setContact] = useState('');
   const [sport, setSport] = useState('Basketball');
@@ -98,6 +105,16 @@ export default function AcademyDashboard() {
   const [imageUrlInput, setImageUrlInput] = useState('');
   const [submittingGround, setSubmittingGround] = useState(false);
   const [showAddGround, setShowAddGround] = useState(false);
+
+  // Academy location editor modal
+  const [showAcademyLocationModal, setShowAcademyLocationModal] = useState(false);
+  const [acadLocForm, setAcadLocForm] = useState({ address: '', city: '', lat: '', lng: '' });
+  const [savingAcadLoc, setSavingAcadLoc] = useState(false);
+
+  // Delete modal states for grounds & staff
+  const [groundToDelete, setGroundToDelete] = useState<any>(null);
+  const [staffToDelete, setStaffToDelete] = useState<any>(null);
+  const [deletingResource, setDeletingResource] = useState(false);
 
   // Tournament Form State
   const [tName, setTName] = useState('');
@@ -164,15 +181,25 @@ export default function AcademyDashboard() {
 
   async function loadData() {
     try {
-      const [acadRes, facRes, tourRes, gamesRes] = await Promise.all([
+      const [acadRes, facRes, tourRes, gamesRes, bookingsRes] = await Promise.all([
         fetch('/api/academies/me').then((r) => r.json()),
         fetch('/api/academies/me/facilities').then((r) => r.json()),
         fetch('/api/academies/me/events').then((r) => r.json()),
         fetch('/api/games').then((r) => r.json()),
+        fetch('/api/bookings?scope=academy').then((r) => r.json()).catch(() => ({ ok: false })),
       ]);
-      if (acadRes.ok) setAcademy(acadRes.data);
+      if (acadRes.ok) {
+        setAcademy(acadRes.data);
+        setAcadLocForm({
+          address: acadRes.data?.address || '',
+          city: acadRes.data?.city || '',
+          lat: acadRes.data?.location?.lat ? String(acadRes.data.location.lat) : '',
+          lng: acadRes.data?.location?.lng ? String(acadRes.data.location.lng) : '',
+        });
+      }
       if (facRes.ok) setFacilities(facRes.data || []);
       if (tourRes.ok) setTournaments(tourRes.data || []);
+      if (bookingsRes.ok) setAcademyBookings(bookingsRes.data || []);
       if (gamesRes.ok) {
         setGames(gamesRes.data || []);
         if (gamesRes.data?.[0]?.name) {
@@ -239,12 +266,17 @@ export default function AcademyDashboard() {
       if (!imageUrl && imageFile) {
         imageUrl = await uploadImage(imageFile, 'academies');
       }
+      const parsedLat = latInput.trim() ? Number(latInput.trim()) : null;
+      const parsedLng = lngInput.trim() ? Number(lngInput.trim()) : null;
       const res = await fetch('/api/academies/me/facilities', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name,
           address: address.trim(),
+          city: city.trim(),
+          lat: parsedLat,
+          lng: parsedLng,
           description: description.trim(),
           contact: contact.trim(),
           sport: resolvedSport,
@@ -257,6 +289,9 @@ export default function AcademyDashboard() {
         notify('ok', `Added ${name} (${resolvedSport}) to your venues!`);
         setName('');
         setAddress('');
+        setCity('');
+        setLatInput('');
+        setLngInput('');
         setDescription('');
         setContact('');
         setPrice('');
@@ -377,14 +412,93 @@ export default function AcademyDashboard() {
     );
   }
 
-  async function deleteGround(facilityId: string) {
-    if (!confirm('Are you sure you want to remove this ground? All slot data will be erased.'))
+  async function handleConfirmDeleteGround() {
+    if (!groundToDelete) return;
+    setDeletingResource(true);
+    try {
+      const res = await fetch(`/api/academies/me/facilities?facilityId=${groundToDelete.id}`, {
+        method: 'DELETE',
+      });
+      const json = await res.json();
+      if (json.ok) {
+        notify(
+          'ok',
+          `Ground "${groundToDelete.name}" removed. ${json.data?.bookingsCancelled || 0} active booking(s) cancelled, ${json.data?.bookingsPreserved || 0} attendance record(s) preserved.`
+        );
+        await loadData();
+      } else {
+        notify('err', json.error?.message || 'Failed to delete ground.');
+      }
+    } catch {
+      notify('err', 'Network error deleting ground.');
+    } finally {
+      setDeletingResource(false);
+      setGroundToDelete(null);
+    }
+  }
+
+  function detectGpsForGround() {
+    if (!navigator.geolocation) {
+      notify('err', 'GPS geolocation is not supported on this browser.');
       return;
-    await fetch(`/api/academies/me/facilities?facilityId=${facilityId}`, {
-      method: 'DELETE',
-    });
-    notify('ok', 'Ground removed.');
-    await loadData();
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLatInput(pos.coords.latitude.toFixed(6));
+        setLngInput(pos.coords.longitude.toFixed(6));
+        notify('ok', 'GPS coordinates captured for this ground.');
+      },
+      () => notify('err', 'Location permission denied. Enter coordinates or address manually.')
+    );
+  }
+
+  function detectGpsForAcademy() {
+    if (!navigator.geolocation) {
+      notify('err', 'GPS geolocation is not supported on this browser.');
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setAcadLocForm((prev) => ({
+          ...prev,
+          lat: pos.coords.latitude.toFixed(6),
+          lng: pos.coords.longitude.toFixed(6),
+        }));
+        notify('ok', 'GPS coordinates captured for academy.');
+      },
+      () => notify('err', 'Location permission denied. Enter coordinates manually.')
+    );
+  }
+
+  async function handleSaveAcademyLocation(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingAcadLoc(true);
+    try {
+      const lat = acadLocForm.lat.trim() ? Number(acadLocForm.lat.trim()) : null;
+      const lng = acadLocForm.lng.trim() ? Number(acadLocForm.lng.trim()) : null;
+      const res = await fetch('/api/academies/me', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          address: acadLocForm.address.trim(),
+          city: acadLocForm.city.trim(),
+          lat,
+          lng,
+        }),
+      });
+      const json = await res.json();
+      if (json.ok) {
+        setAcademy(json.data);
+        setShowAcademyLocationModal(false);
+        notify('ok', 'Academy location & coordinates updated.');
+      } else {
+        notify('err', json.error?.message || 'Failed to update location.');
+      }
+    } catch {
+      notify('err', 'Network error saving location.');
+    } finally {
+      setSavingAcadLoc(false);
+    }
   }
 
   const formatSlot = (h: string) => {
@@ -445,20 +559,48 @@ export default function AcademyDashboard() {
     }
   }
 
-  async function removeStaff(staffId: string, name: string) {
-    if (!confirm(`Remove ${name} from staff?`)) return;
+  async function handleConfirmRemoveStaff() {
+    if (!staffToDelete) return;
+    setDeletingResource(true);
     try {
-      await fetch(`/api/academies/me/staff?staffId=${staffId}`, { method: 'DELETE' });
-      setStaffList((prev) => prev.filter((s) => s.id !== staffId));
-      notify('ok', `${name} removed from staff.`);
+      const res = await fetch(`/api/academies/me/staff?staffId=${staffToDelete.id}`, {
+        method: 'DELETE',
+      });
+      const json = await res.json();
+      if (json.ok) {
+        setStaffList((prev) => prev.filter((s) => s.id !== staffToDelete.id));
+        notify('ok', `${staffToDelete.fullName || staffToDelete.name} removed from staff.`);
+      } else {
+        notify('err', json.error?.message || 'Failed to remove staff member.');
+      }
     } catch {
       notify('err', 'Failed to remove staff member.');
+    } finally {
+      setDeletingResource(false);
+      setStaffToDelete(null);
     }
   }
 
-  function handleStaffCheckIn(id: string, name: string) {
-    setCheckedInIds((prev) => new Set(prev).add(id));
-    notify('ok', `Athlete ${name} checked in successfully!`);
+  async function handleBookingCheckInAction(
+    bookingId: string,
+    action: 'check_in' | 'complete' | 'no_show'
+  ) {
+    try {
+      const res = await fetch('/api/bookings/checkin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bookingId, action }),
+      });
+      const json = await res.json();
+      if (json.ok) {
+        notify('ok', `Booking ${json.data.bookingCode || bookingId} marked ${json.data.status}.`);
+        await loadData();
+      } else {
+        notify('err', json.error?.message || 'Failed to update booking attendance.');
+      }
+    } catch {
+      notify('err', 'Network error updating attendance.');
+    }
   }
 
   if (loading) {
@@ -515,6 +657,12 @@ export default function AcademyDashboard() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2.5">
+            <button
+              onClick={() => setShowAcademyLocationModal(true)}
+              className="btn btn-sm btn-secondary text-xs"
+            >
+              <Navigation className="h-3.5 w-3.5 text-[#16A36A]" /> Location / GPS
+            </button>
             <button
               onClick={() => {
                 setShowAddGround(!showAddGround);
@@ -622,6 +770,45 @@ export default function AcademyDashboard() {
                 className="input"
                 placeholder="e.g. 12 Sports Lane, North Arena"
               />
+            </div>
+            <div>
+              <label className="label">City (Optional)</label>
+              <input
+                value={city}
+                onChange={(e) => setCity(e.target.value)}
+                className="input"
+                placeholder="e.g. Visakhapatnam"
+              />
+            </div>
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="label mb-0">Coordinates (GPS or Manual)</label>
+                <button
+                  type="button"
+                  onClick={detectGpsForGround}
+                  className="text-[11px] font-bold text-[#16A36A] hover:underline flex items-center gap-1"
+                >
+                  <Navigation className="h-3 w-3" /> Use GPS
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  type="number"
+                  step="any"
+                  value={latInput}
+                  onChange={(e) => setLatInput(e.target.value)}
+                  className="input text-xs"
+                  placeholder="Latitude"
+                />
+                <input
+                  type="number"
+                  step="any"
+                  value={lngInput}
+                  onChange={(e) => setLngInput(e.target.value)}
+                  className="input text-xs"
+                  placeholder="Longitude"
+                />
+              </div>
             </div>
             <div>
               <label className="label">Sport Category *</label>
@@ -968,7 +1155,7 @@ export default function AcademyDashboard() {
                       )}
                     </button>
                     <button
-                      onClick={() => deleteGround(f.id)}
+                      onClick={() => setGroundToDelete(f)}
                       className="btn-danger btn-sm text-xs"
                       title="Delete this ground"
                     >
@@ -1064,8 +1251,6 @@ export default function AcademyDashboard() {
                     <div className="flex items-center gap-1.5">
                       <span className="badge badge-warn text-xs font-black">
                         ₹{t.entryFee || t.price || 0}
-                      </span>
-                      <span className="badge badge-warn text-xs font-black">
                       </span>
                       <button
                         onClick={() => {
@@ -1296,7 +1481,7 @@ export default function AcademyDashboard() {
                             )}
                           </button>
                           <button
-                            onClick={() => removeStaff(s.id, s.fullName || s.name || 'Staff')}
+                            onClick={() => setStaffToDelete(s)}
                             className="btn-ghost btn-sm text-xs text-rose-600 hover:bg-rose-50"
                             title="Remove staff"
                           >
@@ -1316,20 +1501,28 @@ export default function AcademyDashboard() {
       {/* ── Check-In Hub Section ─────────────────────────────────────────── */}
       {activeSection === 'checkin' && (
         <section className="space-y-5">
-          <div>
-            <h2 className="text-lg font-extrabold text-[#172033]">Venue Check-In Hub</h2>
-            <p className="text-xs text-[#667085] mt-0.5">
-              Manage on-ground athlete check-ins and monitor court readiness.
-            </p>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-extrabold text-[#172033]">Venue Check-In Hub &amp; QR Attendance</h2>
+              <p className="text-xs text-[#667085] mt-0.5">
+                Scan player QR passes, verify bookings server-side, and record staff check-ins.
+              </p>
+            </div>
+            <button
+              onClick={() => setShowQrScanner(true)}
+              className="btn btn-sm text-xs shrink-0"
+            >
+              <QrCode className="h-4 w-4" /> Open QR Scanner
+            </button>
           </div>
 
           {/* KPI strip */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             {[
               { label: 'Active Grounds', value: `${facilities.length}`, color: 'text-[#172033]' },
-              { label: 'Open Courts', value: `${facilities.filter(f => !f.closed).length}`, color: 'text-[#16A36A]' },
-              { label: 'Checked In Today', value: `${checkedInIds.size}`, color: 'text-[#101828]' },
-              { label: 'Under Maintenance', value: `${facilities.filter(f => f.closed).length}`, color: 'text-amber-600' },
+              { label: 'Confirmed Bookings', value: `${academyBookings.filter((b) => b.status === 'confirmed').length}`, color: 'text-amber-600' },
+              { label: 'Checked In / Completed', value: `${academyBookings.filter((b) => b.status === 'checked_in' || b.status === 'completed').length}`, color: 'text-[#16A36A]' },
+              { label: 'Under Maintenance', value: `${facilities.filter((f) => f.closed).length}`, color: 'text-rose-600' },
             ].map(({ label, value, color }) => (
               <div key={label} className="card p-4">
                 <p className="text-xs text-[#667085] font-medium">{label}</p>
@@ -1340,14 +1533,23 @@ export default function AcademyDashboard() {
 
           {/* Quick check-in tool */}
           <div className="card p-5 space-y-3">
-            <div className="flex items-center gap-2 mb-1">
-              <div className="w-8 h-8 rounded-lg bg-[#E8F5EE] text-[#16A36A] flex items-center justify-center">
-                <UserCheck className="h-4 w-4" />
+            <div className="flex items-center justify-between gap-2 mb-1">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-[#E8F5EE] text-[#16A36A] flex items-center justify-center">
+                  <UserCheck className="h-4 w-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-[#172033]">Manual Booking-ID Check-In</h3>
+                  <p className="text-xs text-[#667085]">Enter Booking Code (e.g. PNX-A1B2C3) or Booking ID for server validation</p>
+                </div>
               </div>
-              <div>
-                <h3 className="text-sm font-bold text-[#172033]">Athlete Instant Check-In</h3>
-                <p className="text-xs text-[#667085]">Search by booking ID, name, or phone</p>
-              </div>
+              <button
+                type="button"
+                onClick={() => setShowQrScanner(true)}
+                className="btn-secondary btn-sm text-xs"
+              >
+                <QrCode className="h-3.5 w-3.5 text-[#16A36A]" /> Camera Scan
+              </button>
             </div>
             <div className="flex flex-col sm:flex-row items-center gap-3">
               <div className="relative flex-1 w-full">
@@ -1356,14 +1558,14 @@ export default function AcademyDashboard() {
                   type="text"
                   value={checkInQuery}
                   onChange={(e) => setCheckInQuery(e.target.value)}
-                  placeholder="Search athlete name, booking ID, or phone..."
+                  placeholder="Enter booking code (PNX-...) or search below..."
                   className="input pl-10"
                 />
               </div>
               <button
                 onClick={() => {
                   if (checkInQuery.trim()) {
-                    handleStaffCheckIn(`ck-${Date.now()}`, checkInQuery.trim());
+                    handleBookingCheckInAction(checkInQuery.trim(), 'check_in');
                     setCheckInQuery('');
                   }
                 }}
@@ -1371,19 +1573,125 @@ export default function AcademyDashboard() {
                 className="btn btn-sm w-full sm:w-auto"
               >
                 <CheckCircle2 className="h-3.5 w-3.5" />
-                Confirm Check-In
+                Verify &amp; Check In
               </button>
             </div>
           </div>
 
+          {/* Live Bookings & Attendance Table */}
+          <div className="card p-0 overflow-hidden">
+            <div className="px-5 py-4 border-b border-[#E5E7EB] flex items-center justify-between">
+              <h3 className="text-sm font-extrabold text-[#172033]">
+                Ground Bookings &amp; Attendance ({academyBookings.length})
+              </h3>
+              <button type="button" onClick={loadData} className="btn-ghost btn-sm text-xs">
+                <RefreshCw className="h-3.5 w-3.5" /> Refresh
+              </button>
+            </div>
+            {academyBookings.length === 0 ? (
+              <div className="p-8 text-center text-xs text-[#667085]">
+                No ground bookings recorded for your academy yet.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="data-table">
+                  <thead className="bg-slate-50/80">
+                    <tr>
+                      <th>Booking Code</th>
+                      <th>Player</th>
+                      <th>Ground</th>
+                      <th>Date &amp; Slot</th>
+                      <th>Status</th>
+                      <th>Checked-In By</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {academyBookings
+                      .filter((b) => {
+                        const q = checkInQuery.trim().toLowerCase();
+                        if (!q) return true;
+                        return (
+                          (b.bookingCode || '').toLowerCase().includes(q) ||
+                          b.id.toLowerCase().includes(q) ||
+                          (b.userEmail || '').toLowerCase().includes(q) ||
+                          (b.userName || '').toLowerCase().includes(q)
+                        );
+                      })
+                      .map((b) => (
+                        <tr key={b.id}>
+                          <td className="font-mono font-bold text-xs">{b.bookingCode || b.id.slice(0, 8)}</td>
+                          <td className="text-xs">
+                            <p className="font-semibold text-[#172033]">{b.userName || 'Player'}</p>
+                            <p className="text-[11px] text-[#667085]">{b.userEmail}</p>
+                          </td>
+                          <td className="text-xs font-medium">{b.facilityName}</td>
+                          <td className="text-xs">{b.bookingDate || 'Today'} · {formatSlot(String(b.slot))}</td>
+                          <td>
+                            <span
+                              className={`badge text-[10px] uppercase ${
+                                b.status === 'checked_in' || b.status === 'completed'
+                                  ? 'badge-ok'
+                                  : b.status === 'cancelled' || b.status === 'no_show'
+                                  ? 'badge-bad'
+                                  : 'badge-warn'
+                              }`}
+                            >
+                              {b.status}
+                            </span>
+                          </td>
+                          <td className="text-[11px] text-[#667085]">
+                            {b.checkedInBy?.email
+                              ? `${b.checkedInBy.email} (${new Date(b.checkedInAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`
+                              : '—'}
+                          </td>
+                          <td>
+                            <div className="flex items-center gap-1.5">
+                              {b.status === 'confirmed' && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleBookingCheckInAction(b.id, 'check_in')}
+                                    className="btn btn-sm text-[11px] py-1 px-2.5"
+                                  >
+                                    Check In
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleBookingCheckInAction(b.id, 'no_show')}
+                                    className="btn-secondary btn-sm text-[11px] py-1 px-2"
+                                  >
+                                    No Show
+                                  </button>
+                                </>
+                              )}
+                              {b.status === 'checked_in' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleBookingCheckInAction(b.id, 'complete')}
+                                  className="btn-secondary btn-sm text-[11px] py-1 px-2.5"
+                                >
+                                  Complete
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
           {/* Court status overview */}
           <div>
-            <h3 className="section-title mb-4">Ground & Court Oversight</h3>
+            <h3 className="section-title mb-4">Ground &amp; Court Oversight</h3>
             {facilities.length === 0 ? (
               <div className="empty-state">
                 <div className="empty-state-icon"><Building2 className="h-6 w-6" /></div>
                 <p className="empty-state-title">No grounds added yet</p>
-                <p className="empty-state-desc">Add grounds in the Grounds & Facilities section first.</p>
+                <p className="empty-state-desc">Add grounds in the Grounds &amp; Facilities section first.</p>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1416,6 +1724,110 @@ export default function AcademyDashboard() {
             )}
           </div>
         </section>
+      )}
+
+      {/* QR Scanner Modal */}
+      <QRScannerModal
+        isOpen={showQrScanner}
+        onClose={() => setShowQrScanner(false)}
+        onCheckedIn={loadData}
+        onNotify={notify}
+      />
+
+      {/* Delete Ground Confirmation Modal */}
+      <DeleteConfirmModal
+        isOpen={!!groundToDelete}
+        onClose={() => setGroundToDelete(null)}
+        onConfirm={handleConfirmDeleteGround}
+        title="Delete Ground"
+        recordName={groundToDelete?.name || ''}
+        recordType="Ground"
+        warningText="Deleting this ground cancels active confirmed bookings (notifying affected players), frees slot locks, and deletes ratings while preserving historical check-in records."
+        loading={deletingResource}
+      />
+
+      {/* Remove Staff Confirmation Modal */}
+      <DeleteConfirmModal
+        isOpen={!!staffToDelete}
+        onClose={() => setStaffToDelete(null)}
+        onConfirm={handleConfirmRemoveStaff}
+        title="Remove Staff Member"
+        recordName={staffToDelete?.fullName || staffToDelete?.name || ''}
+        recordType="Staff Member"
+        warningText="This staff member will immediately lose access to academy check-in and ground management tools."
+        loading={deletingResource}
+      />
+
+      {/* Academy Location & GPS Modal */}
+      {showAcademyLocationModal && (
+        <div className="modal-overlay">
+          <div className="modal-box max-w-md">
+            <div className="modal-header">
+              <h3 className="modal-title">Academy Location &amp; GPS</h3>
+              <button onClick={() => setShowAcademyLocationModal(false)} className="text-[#667085] hover:text-[#172033]">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <form onSubmit={handleSaveAcademyLocation} className="modal-body space-y-3 text-xs">
+              <div>
+                <label className="label">Street Address *</label>
+                <input
+                  required
+                  value={acadLocForm.address}
+                  onChange={(e) => setAcadLocForm({ ...acadLocForm, address: e.target.value })}
+                  className="input"
+                />
+              </div>
+              <div>
+                <label className="label">City</label>
+                <input
+                  value={acadLocForm.city}
+                  onChange={(e) => setAcadLocForm({ ...acadLocForm, city: e.target.value })}
+                  className="input"
+                  placeholder="e.g. Visakhapatnam"
+                />
+              </div>
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="label mb-0">Coordinates (GPS or Manual)</label>
+                  <button
+                    type="button"
+                    onClick={detectGpsForAcademy}
+                    className="text-[11px] font-bold text-[#16A36A] hover:underline flex items-center gap-1"
+                  >
+                    <Navigation className="h-3 w-3" /> Use GPS
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="number"
+                    step="any"
+                    value={acadLocForm.lat}
+                    onChange={(e) => setAcadLocForm({ ...acadLocForm, lat: e.target.value })}
+                    className="input"
+                    placeholder="Latitude"
+                  />
+                  <input
+                    type="number"
+                    step="any"
+                    value={acadLocForm.lng}
+                    onChange={(e) => setAcadLocForm({ ...acadLocForm, lng: e.target.value })}
+                    className="input"
+                    placeholder="Longitude"
+                  />
+                </div>
+              </div>
+              <div className="modal-footer px-0 pb-0">
+                <button type="button" onClick={() => setShowAcademyLocationModal(false)} className="btn-secondary btn-sm">
+                  Cancel
+                </button>
+                <button type="submit" disabled={savingAcadLoc} className="btn btn-sm">
+                  {savingAcadLoc ? 'Saving...' : 'Save Location'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -4,9 +4,21 @@ import { logActivity } from '@/lib/firebase/activity';
 export interface DispatchNotificationInput {
   title: string;
   message: string;
-  category: 'tournament' | 'match' | 'academy' | 'store' | 'announcement' | 'order' | 'registration';
-  targetRole?: 'player' | 'all' | 'academy' | 'store';
+  category:
+    | 'tournament'
+    | 'match'
+    | 'academy'
+    | 'store'
+    | 'announcement'
+    | 'order'
+    | 'rental'
+    | 'registration'
+    | 'verification'
+    | 'chat'
+    | 'system';
+  targetRole?: 'player' | 'all' | 'academy' | 'store' | 'admin';
   targetUserId?: string;
+  recipientId?: string;
   targetSport?: string;
   targetEventId?: string;
   link?: string;
@@ -16,13 +28,14 @@ export interface DispatchNotificationInput {
 }
 
 /**
- * Centrally dispatches cross-portal notifications with guaranteed idempotency
- * and automated audit logging.
+ * Centrally dispatches cross-portal and individual notifications with guaranteed
+ * idempotency, strict recipientId isolation, and automated audit logging.
  */
 export async function dispatchNotification(input: DispatchNotificationInput): Promise<string | null> {
   try {
     const targetRole = input.targetRole || 'player';
     const senderName = input.senderName || 'PlayNex';
+    const recipient = input.recipientId || input.targetUserId || null;
     const now = Date.now();
 
     const notifData = {
@@ -30,24 +43,23 @@ export async function dispatchNotification(input: DispatchNotificationInput): Pr
       message: input.message,
       category: input.category,
       targetRole,
-      targetUserId: input.targetUserId || null,
+      targetUserId: recipient,
+      recipientId: recipient,
       targetSport: input.targetSport || null,
       targetEventId: input.targetEventId || null,
-      link: input.link || '/player',
+      link: input.link || (targetRole === 'academy' ? '/academy' : targetRole === 'store' ? '/store' : targetRole === 'admin' ? '/admin' : '/player'),
       senderName,
       metadata: input.metadata || {},
       createdAt: now,
       idempotencyKey: input.idempotencyKey || null,
     };
 
-    // If idempotencyKey is supplied, use it as the doc ID to ensure zero duplicate delivery
     let docId: string;
     if (input.idempotencyKey) {
       const cleanKey = input.idempotencyKey.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 100);
       const notifRef = adminDb.collection('notifications').doc(cleanKey);
       const existing = await notifRef.get();
       if (existing.exists) {
-        // Notification already sent for this exact action/event
         return cleanKey;
       }
       await notifRef.set(notifData);
@@ -57,14 +69,13 @@ export async function dispatchNotification(input: DispatchNotificationInput): Pr
       docId = docRef.id;
     }
 
-    // Log the automated notification dispatch
     await logActivity({
-      userId: input.targetUserId || 'system',
+      userId: recipient || 'system',
       userName: senderName,
       action: 'notification_dispatched',
       entityType: 'announcement',
       entityId: docId,
-      details: `[${input.category.toUpperCase()}] ${input.title} -> ${input.targetUserId ? `User:${input.targetUserId}` : `Audience:${targetRole}`}`,
+      details: `[${input.category.toUpperCase()}] ${input.title} -> ${recipient ? `User:${recipient}` : `Audience:${targetRole}`}`,
     });
 
     return docId;
@@ -73,4 +84,3 @@ export async function dispatchNotification(input: DispatchNotificationInput): Pr
     return null;
   }
 }
-

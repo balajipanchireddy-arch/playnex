@@ -4,7 +4,6 @@ import { isAdmin } from '@/lib/auth/admin';
 import { ok, fail } from '@/lib/api/response';
 import { NextRequest } from 'next/server';
 
-
 export async function GET() {
   const session = await verifySession();
   if (!session) return fail('unauthorized', 'Login required', 401);
@@ -21,6 +20,10 @@ export async function GET() {
       facilitiesSnap,
       productsSnap,
       ordersSnap,
+      rentalsSnap,
+      bookingsSnap,
+      matchesSnap,
+      playerVerifsSnap,
       logsSnap,
     ] = await Promise.all([
       adminDb.collection('users').get(),
@@ -32,10 +35,13 @@ export async function GET() {
       adminDb.collection('facilities').get(),
       adminDb.collection('products').get(),
       adminDb.collection('orders').get(),
-      adminDb.collection('activityLogs').orderBy('timestamp', 'desc').limit(25).get(),
+      adminDb.collection('rentals').get(),
+      adminDb.collection('bookings').get(),
+      adminDb.collection('matches').get(),
+      adminDb.collection('playerVerifications').get(),
+      adminDb.collection('activityLogs').orderBy('timestamp', 'desc').limit(30).get(),
     ]);
 
-    // Role breakdown (The 4 core platform roles: player, academy, store, admin)
     const roleCounts: Record<string, number> = {
       player: 0,
       academy: 0,
@@ -44,10 +50,9 @@ export async function GET() {
     };
     rolesSnap.docs.forEach((d: any) => {
       const r = d.data().roleId;
-      if (roleCounts[r] !== undefined) roleCounts[r]++;
+      if (d.data().status === 'active' && roleCounts[r] !== undefined) roleCounts[r]++;
     });
 
-    // Tournament status breakdown
     const tournamentStatusCounts: Record<string, number> = {
       upcoming: 0,
       registration_open: 0,
@@ -65,48 +70,93 @@ export async function GET() {
       }
     });
 
-    // Verification counts
     let pendingAcademies = 0;
     let approvedAcademies = 0;
     academiesSnap.docs.forEach((d: any) => {
       if (d.data().verificationStatus === 'approved') approvedAcademies++;
-      else pendingAcademies++;
+      else if (d.data().verificationStatus === 'pending') pendingAcademies++;
     });
 
     let pendingStores = 0;
     let approvedStores = 0;
     storesSnap.docs.forEach((d: any) => {
       if (d.data().verificationStatus === 'approved') approvedStores++;
-      else pendingStores++;
+      else if (d.data().verificationStatus === 'pending') pendingStores++;
     });
 
-    // Sports breakdown in tournaments
+    const pendingPlayerVerifs = playerVerifsSnap.docs.filter((d: any) =>
+      ['pending', 'under_review'].includes(d.data()?.status)
+    ).length;
+
     const sportCounts: Record<string, number> = {};
     eventsSnap.docs.forEach((d: any) => {
       const sp = d.data().sport || 'Other';
       sportCounts[sp] = (sportCounts[sp] || 0) + 1;
     });
 
-    // Total revenue from shipped orders
     let totalRevenue = 0;
     ordersSnap.docs.forEach((d: any) => {
       const data = d.data();
-      if (data.status === 'shipped') {
+      if (data.status === 'shipped' || data.status === 'delivered') {
         totalRevenue += Number(data.total || data.price * (data.qty || 1) || 0);
       }
     });
 
-    // Recent registrations
+    const bookingsByStatus: Record<string, number> = {
+      confirmed: 0,
+      checked_in: 0,
+      completed: 0,
+      cancelled: 0,
+      no_show: 0,
+    };
+    bookingsSnap.docs.forEach((d: any) => {
+      const st = d.data()?.status || 'confirmed';
+      bookingsByStatus[st] = (bookingsByStatus[st] || 0) + 1;
+    });
+
     const recentRegistrations = registrationsSnap.docs
       .map((d: any) => ({ id: d.id, ...d.data() }))
       .sort((a: any, b: any) => (b.createdAt || 0) - (a.createdAt || 0))
       .slice(0, 10);
 
-    // Recent activity logs
     const activityLogs = logsSnap.docs.map((d: any) => ({
       id: d.id,
       ...d.data(),
     }));
+
+    // Facility counts per academy
+    const facByAcademy = new Map<string, number>();
+    facilitiesSnap.docs.forEach((d: any) => {
+      const aid = d.data()?.academyId;
+      if (aid) facByAcademy.set(aid, (facByAcademy.get(aid) || 0) + 1);
+    });
+    const academiesList = academiesSnap.docs.map((d: any) => ({
+      id: d.id,
+      ...d.data(),
+      facilitiesCount: facByAcademy.get(d.id) || 0,
+    }));
+
+    // Product & order counts per store
+    const prodByStore = new Map<string, number>();
+    productsSnap.docs.forEach((d: any) => {
+      const sid = d.data()?.storeId;
+      if (sid) prodByStore.set(sid, (prodByStore.get(sid) || 0) + 1);
+    });
+    const ordByStore = new Map<string, number>();
+    ordersSnap.docs.forEach((d: any) => {
+      const sid = d.data()?.storeId;
+      if (sid) ordByStore.set(sid, (ordByStore.get(sid) || 0) + 1);
+    });
+    const storesList = storesSnap.docs.map((d: any) => ({
+      id: d.id,
+      ...d.data(),
+      productsCount: prodByStore.get(d.id) || 0,
+      ordersCount: ordByStore.get(d.id) || 0,
+    }));
+
+    const matchesList = matchesSnap.docs
+      .map((d: any) => ({ id: d.id, ...d.data() }))
+      .sort((a: any, b: any) => (b.createdAt || 0) - (a.createdAt || 0));
 
     return ok({
       totals: {
@@ -119,18 +169,27 @@ export async function GET() {
         facilities: facilitiesSnap.size,
         products: productsSnap.size,
         orders: ordersSnap.size,
+        rentals: rentalsSnap.size,
+        bookings: bookingsSnap.size,
+        matches: matchesSnap.size,
         revenue: totalRevenue,
-        pendingVerifications: pendingAcademies + pendingStores,
+        pendingVerifications: pendingAcademies + pendingStores + pendingPlayerVerifs,
+        pendingPlayerVerifications: pendingPlayerVerifs,
       },
       verifications: {
         academies: { approved: approvedAcademies, pending: pendingAcademies },
         stores: { approved: approvedStores, pending: pendingStores },
+        players: { pending: pendingPlayerVerifs },
       },
       roles: roleCounts,
       tournamentStatuses: tournamentStatusCounts,
       tournamentsBySport: sportCounts,
+      bookingsByStatus,
       recentRegistrations,
       activityLogs,
+      academiesList,
+      storesList,
+      matchesList,
     });
   } catch (e: any) {
     console.error('Error compiling analytics:', e);
@@ -145,16 +204,14 @@ export async function DELETE(req: NextRequest) {
 
   try {
     const logsSnap = await adminDb.collection('activityLogs').get();
-    const batchSize = 400;
-    const docs = logsSnap.docs;
-    for (let i = 0; i < docs.length; i += batchSize) {
-      const chunk = docs.slice(i, i + batchSize);
+    const docs = logsSnap.docs.filter((d: any) => d.data()?.action !== 'database_cleanup_executed');
+    for (let i = 0; i < docs.length; i += 400) {
+      const chunk = docs.slice(i, i + 400);
       const batch = adminDb.batch();
       chunk.forEach((d: any) => batch.delete(d.ref));
       await batch.commit();
     }
 
-    // Keep an initial log noting that logs were pruned
     await adminDb.collection('activityLogs').add({
       userId: session.uid,
       userName: 'Administrator',

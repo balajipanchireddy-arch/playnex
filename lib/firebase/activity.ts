@@ -4,7 +4,20 @@ export interface ActivityLogInput {
   userId: string;
   userName?: string;
   action: string;
-  entityType: 'tournament' | 'registration' | 'verification' | 'user' | 'order' | 'booking' | 'announcement' | 'game' | 'staff' | 'match';
+  entityType:
+    | 'tournament'
+    | 'registration'
+    | 'verification'
+    | 'user'
+    | 'order'
+    | 'rental'
+    | 'booking'
+    | 'announcement'
+    | 'game'
+    | 'staff'
+    | 'match'
+    | 'chat'
+    | 'system';
   entityId?: string;
   details: string;
 }
@@ -23,17 +36,32 @@ export async function logActivity(input: ActivityLogInput) {
 export interface NotificationInput {
   title: string;
   message: string;
-  category: 'tournament' | 'match' | 'system' | 'announcement' | 'registration' | 'order' | 'academy' | 'store';
-  targetRole: 'all' | 'player' | 'academy' | 'store';
+  category:
+    | 'tournament'
+    | 'match'
+    | 'system'
+    | 'announcement'
+    | 'registration'
+    | 'order'
+    | 'rental'
+    | 'academy'
+    | 'store'
+    | 'verification'
+    | 'chat';
+  targetRole: 'all' | 'player' | 'academy' | 'store' | 'admin';
   targetUserId?: string;
+  recipientId?: string;
   link?: string;
   senderName?: string;
 }
 
 export async function sendNotification(input: NotificationInput) {
   try {
+    const recipient = input.recipientId || input.targetUserId || null;
     const docRef = await adminDb.collection('notifications').add({
       ...input,
+      targetUserId: recipient,
+      recipientId: recipient,
       senderName: input.senderName || 'PlayNex Admin',
       createdAt: Date.now(),
     });

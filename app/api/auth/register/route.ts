@@ -6,6 +6,8 @@ import {
   isSuperAdmin as isConfiguredSuperAdmin,
   ensureSuperAdminAccount,
 } from '@/lib/auth/admin';
+import { FIVE_DAYS_MS } from '@/lib/verification/player';
+import { dispatchNotification } from '@/lib/notifications/dispatch';
 import { ok, fail } from '@/lib/api/response';
 
 const Body = z.object({
@@ -24,7 +26,7 @@ export async function POST(req: NextRequest) {
     const uid = decoded.uid;
     const now = Date.now();
 
-    const isSuperAdmin = await isConfiguredSuperAdmin(uid);
+    const isSuperAdmin = await isConfiguredSuperAdmin(uid, decoded.email);
 
     if (isSuperAdmin) {
       const user = await ensureSuperAdminAccount(
@@ -33,7 +35,6 @@ export async function POST(req: NextRequest) {
         fullName
       );
 
-      // Firestore roles are authoritative for current server permissions.
       try {
         await adminAuth.setCustomUserClaims(uid, { roles: ['admin'] });
       } catch (err) {
@@ -63,7 +64,6 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Normal single-role registration flow.
     await adminDb.collection('userRoles').doc(`${uid}_${role}`).set({
       userId: uid,
       roleId: role,
@@ -73,32 +73,59 @@ export async function POST(req: NextRequest) {
     });
 
     if (role === 'player') {
-      await adminDb.collection('playerProfiles').doc(uid).set({
-        userId: uid,
-        sportsPreferences: [],
-        skillLevel: 'Beginner',
-        createdAt: now,
-      }, { merge: true });
+      const verificationDeadline = now + FIVE_DAYS_MS;
+      await adminDb.collection('playerProfiles').doc(uid).set(
+        {
+          userId: uid,
+          sportsPreferences: [],
+          skillLevel: 'Beginner',
+          verificationStatus: 'not_submitted',
+          verificationStartedAt: now,
+          verificationDeadline,
+          shareLocation: false,
+          createdAt: now,
+          updatedAt: now,
+        },
+        { merge: true }
+      );
+
+      await dispatchNotification({
+        title: 'Complete Player Verification Within 5 Days',
+        message: `Welcome to PlayNex! Please submit your verification proof before ${new Date(verificationDeadline).toLocaleDateString()} to keep full access to bookings, matchmaking, and tournaments.`,
+        category: 'verification',
+        targetRole: 'player',
+        recipientId: uid,
+        targetUserId: uid,
+        link: '/player',
+        senderName: 'PlayNex Verification Desk',
+        idempotencyKey: `notif_welcome_verif_${uid}`,
+      });
     } else if (role === 'store') {
-      await adminDb.collection('stores').doc(uid).set({
-        storeId: uid,
-        ownerUserId: uid,
-        storeName: fullName + "'s Store",
-        address: 'Update address',
-        contact: '',
-        verificationStatus: 'pending',
-        createdAt: now,
-      }, { merge: true });
+      await adminDb.collection('stores').doc(uid).set(
+        {
+          storeId: uid,
+          ownerUserId: uid,
+          storeName: fullName + "'s Store",
+          address: 'Update address',
+          contact: '',
+          verificationStatus: 'pending',
+          createdAt: now,
+        },
+        { merge: true }
+      );
     } else if (role === 'academy') {
-      await adminDb.collection('academies').doc(uid).set({
-        academyId: uid,
-        ownerUserId: uid,
-        academyName: fullName + "'s Academy",
-        address: 'Update address',
-        contact: '',
-        verificationStatus: 'pending',
-        createdAt: now,
-      }, { merge: true });
+      await adminDb.collection('academies').doc(uid).set(
+        {
+          academyId: uid,
+          ownerUserId: uid,
+          academyName: fullName + "'s Academy",
+          address: 'Update address',
+          contact: '',
+          verificationStatus: 'pending',
+          createdAt: now,
+        },
+        { merge: true }
+      );
     }
 
     await adminAuth.setCustomUserClaims(uid, { roles: [role] });
